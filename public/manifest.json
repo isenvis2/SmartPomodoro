@@ -1,0 +1,14 @@
+{
+  "name": "포모도로 타이머",
+  "short_name": "포모도로",
+  "description": "스마트 포모도로 타이머 — 작업 관리 & 집중력 향상",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fafaf8",
+  "theme_color": "#534AB7",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
