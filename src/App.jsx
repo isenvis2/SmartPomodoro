@@ -118,6 +118,8 @@ export default function App() {
   const [selGid,setSelGid]=useState("exercise");
   const [tasks,setTasks]=useState(saved?.tasks||[]);
   const [scheduleAlert,setScheduleAlert]=useState(null);
+  const [confirmModal,setConfirmModal]=useState(null); // {message, onConfirm}
+  function askConfirm(message,onConfirm){setConfirmModal({message,onConfirm});}
   const [showWeekly,setShowWeekly]=useState(false);
   const [weekOffset,setWeekOffset]=useState(0);
   const [editF,setEditF]=useState(null);
@@ -299,13 +301,17 @@ export default function App() {
   }
   function toggleRun(){if(!session)return;setRunning(r=>!r);}
   function resetTmr(){
-    if(!window.confirm("타이머를 리셋할까요? 진행 중인 기록은 복구할 수 없어요."))return;
-    clearInterval(iRef.current);clearInterval(paRef.current);setRunning(false);
-    if(session){setTLeft(curPhSec);setLSegs([{color:PH_COLOR[session.phase],px:0}]);}setPSec(0);}
+    askConfirm("타이머를 리셋할까요? 진행 중인 기록은 복구할 수 없어요.",()=>{
+      clearInterval(iRef.current);clearInterval(paRef.current);setRunning(false);
+      if(session){setTLeft(curPhSec);setLSegs([{color:PH_COLOR[session.phase],px:0}]);}setPSec(0);
+    });
+  }
   function stopSes(){
-    if(!window.confirm("세션을 종료할까요? 진행 중인 기록은 복구할 수 없어요."))return;
-    clearInterval(iRef.current);clearInterval(paRef.current);
-    setRunning(false);setSession(null);setTl([]);setPSegs([]);setLSegs([]);setPSec(0);setTotPSec(0);}
+    askConfirm("세션을 종료할까요? 진행 중인 기록은 복구할 수 없어요.",()=>{
+      clearInterval(iRef.current);clearInterval(paRef.current);
+      setRunning(false);setSession(null);setTl([]);setPSegs([]);setLSegs([]);setPSec(0);setTotPSec(0);
+    });
+  }
 
   const weekDays=getWeekDays(now,weekOffset);
   const weekData=weekDays.map((d,di)=>{
@@ -791,6 +797,18 @@ export default function App() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {confirmModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}} onClick={()=>setConfirmModal(null)}>
+          <div style={{background:"#fff",borderRadius:14,padding:"20px",width:"min(320px,86vw)",boxShadow:"0 10px 40px rgba(0,0,0,.2)"}} onClick={e=>e.stopPropagation()}>
+            <p style={{fontSize:14,color:"#333",lineHeight:1.5,margin:"0 0 18px"}}>{confirmModal.message}</p>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={()=>setConfirmModal(null)} style={{padding:"9px 16px",fontSize:13,background:"transparent",color:"#666",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>취소</button>
+              <button onClick={()=>{const fn=confirmModal.onConfirm;setConfirmModal(null);fn&&fn();}} style={{padding:"9px 16px",fontSize:13,background:"#E24B4A",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:500}}>확인</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
