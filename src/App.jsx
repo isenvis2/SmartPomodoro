@@ -2,10 +2,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
-function lsSave(tasks, groups, conds) {
+function lsSave(tasks, groups, conds, alarmCfg) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({
-      tasks, groups, conds, savedAt: new Date().toISOString()
+      tasks, groups, conds, alarmCfg, savedAt: new Date().toISOString()
     }));
   } catch(e) { console.warn("저장 실패", e); }
 }
@@ -14,6 +14,56 @@ function lsLoad() {
     const r = localStorage.getItem(LS_KEY);
     return r ? JSON.parse(r) : null;
   } catch(e) { return null; }
+}
+
+// ── 알람 ──
+// 알람은 2종류뿐입니다.
+//  - "focus": 집중 종료 → 휴식 시작 (작업 전체 완료 시에도 이 소리 사용)
+//  - "break": 휴식 종료 → 집중 시작
+// 사용자가 public/sounds/ 폴더에 아래 이름으로 파일을 넣으면 해당 소리가 재생되고,
+// 없으면 Web Audio API로 생성한 기본 비프음이 재생됩니다.
+const ALARM_FILES={focus:"/sounds/focus-end.mp3",break:"/sounds/break-end.mp3"};
+// 배경음악(BGM) — 세션 진행 중 재생되는 음악. 집중용/휴식용을 따로 둘 수 있습니다.
+//  - "focus": 집중 시간 동안 재생
+//  - "break": 짧은/긴 휴식 시간 동안 재생
+const BGM_FILES={focus:"/sounds/focus-bgm.mp3",break:"/sounds/break-bgm.mp3"};
+const DEF_ALARM={sound:true,vibration:true,flash:true,volume:0.7,bgm:false,bgmVolume:0.4};
+let _actx=null;
+function beep(freq=880,dur=180,delay=0,vol=0.3,type="sine"){
+  try{
+    _actx=_actx||new (window.AudioContext||window.webkitAudioContext)();
+    if(_actx.state==="suspended")_actx.resume();
+    const t0=_actx.currentTime+delay/1000;
+    const o=_actx.createOscillator(),g=_actx.createGain();
+    o.type=type;o.frequency.value=freq;
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.exponentialRampToValueAtTime(vol,t0+0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+dur/1000);
+    o.connect(g);g.connect(_actx.destination);
+    o.start(t0);o.stop(t0+dur/1000+0.02);
+  }catch(e){}
+}
+function beepPattern(kind,vol){
+  if(kind==="focus"){beep(784,150,0,vol);beep(1047,260,180,vol);}
+  else{beep(659,220,0,vol);}
+}
+function fireAlarm(cfg,kind,setFlashOn){
+  if(!cfg)cfg=DEF_ALARM;
+  if(cfg.sound){
+    const a=new Audio(ALARM_FILES[kind]);
+    a.volume=cfg.volume??0.7;
+    let fellBack=false;
+    const fb=()=>{if(fellBack)return;fellBack=true;beepPattern(kind,cfg.volume??0.3);};
+    a.addEventListener("error",fb);
+    a.play().catch(fb);
+  }
+  if(cfg.vibration&&navigator.vibrate){
+    navigator.vibrate(kind==="focus"?[200,100,200]:[400]);
+  }
+  if(cfg.flash&&setFlashOn){
+    setFlashOn(true);
+    setTimeout(()=>setFlashOn(false),1500);
+  }
 }
 
 // ── 상수 ──
@@ -138,8 +188,13 @@ export default function App() {
   const [pSec,setPSec]=useState(0);
   const [totPSec,setTotPSec]=useState(0);
   const [saveStatus,setSaveStatus]=useState("");
+  const [alarmCfg,setAlarmCfg]=useState(saved?.alarmCfg||DEF_ALARM);
+  const [flashOn,setFlashOn]=useState(false);
+  const [showSettings,setShowSettings]=useState(false);
   const iRef=useRef(null);
   const paRef=useRef(null);
+  const alarmRef=useRef(alarmCfg);
+  useEffect(()=>{alarmRef.current=alarmCfg;},[alarmCfg]);
 
   const selG=getGrp(groups,selGid);
   const curPhSec=session?session.phase===FOCUS?session.sch.fps*60:session.phase===SHORT?session.sch.sb*60:session.sch.lb*60:0;
@@ -160,7 +215,7 @@ export default function App() {
     .sort((a,b)=>a.cfg.time.localeCompare(b.cfg.time));
 
   // 자동 저장
-  useEffect(()=>{ lsSave(tasks,groups,conds); },[tasks,groups,conds]);
+  useEffect(()=>{ lsSave(tasks,groups,conds,alarmCfg); },[tasks,groups,conds,alarmCfg]);
 
   // 예약 체크
   useEffect(()=>{
@@ -183,7 +238,7 @@ export default function App() {
   },[tasks]);
 
   function manualSave(){
-    lsSave(tasks,groups,conds);
+    lsSave(tasks,groups,conds,alarmCfg);
     setSaveStatus("saved");
     setTimeout(()=>setSaveStatus(""),2000);
   }
@@ -193,6 +248,7 @@ export default function App() {
       if(d.tasks)setTasks(d.tasks);
       if(d.groups)setGroups(d.groups);
       if(d.conds)setConds(d.conds);
+      if(d.alarmCfg)setAlarmCfg(d.alarmCfg);
       setSaveStatus("loaded");
       setTimeout(()=>setSaveStatus(""),2000);
     }else{ alert("저장된 데이터가 없습니다."); }
@@ -235,12 +291,18 @@ export default function App() {
             const nc=s.done+1;
             setLog(l=>[...l,{name:s.name,gid:s.gid,min:s.sch.fps,num:nc,cid:s.cid,
               time:new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}]);
-            if(nc>=s.total){setTasks(ts=>ts.map(t=>t.id===s.tid?{...t,done:true}:t));return null;}
+            if(nc>=s.total){
+              setTasks(ts=>ts.map(t=>t.id===s.tid?{...t,done:true}:t));
+              fireAlarm(alarmRef.current,"focus",setFlashOn);
+              return null;
+            }
             const iL=nc%s.sch.le===0;
             setTimeout(()=>setTLeft((iL?s.sch.lb:s.sch.sb)*60),0);
+            fireAlarm(alarmRef.current,"focus",setFlashOn);
             return{...s,phase:iL?LONG:SHORT,done:nc};
           }else{
             setTimeout(()=>setTLeft(s.sch.fps*60),0);
+            fireAlarm(alarmRef.current,"break",setFlashOn);
             return{...s,phase:FOCUS};
           }
         });return 0;
@@ -278,6 +340,31 @@ export default function App() {
     }
     return()=>clearInterval(paRef.current);
   },[running,session]);
+
+  // 배경음악(BGM) 재생 — 집중/휴식 단계에 맞춰 곡 전환
+  const bgmRef=useRef(null);
+  useEffect(()=>{
+    if(!bgmRef.current){
+      const a=new Audio();a.loop=true;a.dataset.kind="";
+      a.addEventListener("error",()=>{a.dataset.kind="";});
+      bgmRef.current=a;
+    }
+  },[]);
+  useEffect(()=>{
+    const audio=bgmRef.current;
+    if(!audio)return;
+    if(!alarmCfg.bgm||!session||!running){audio.pause();return;}
+    const kind=session.phase===FOCUS?"focus":"break";
+    if(audio.dataset.kind!==kind){
+      audio.src=BGM_FILES[kind];
+      audio.dataset.kind=kind;
+    }
+    audio.volume=alarmCfg.bgmVolume??0.4;
+    audio.play().catch(()=>{});
+  },[session?.phase,running,alarmCfg.bgm,alarmCfg.bgmVolume]);
+  useEffect(()=>{
+    if(!session&&bgmRef.current)bgmRef.current.pause();
+  },[session]);
 
   function startTask(task,cond){
     clearInterval(iRef.current);clearInterval(paRef.current);
@@ -326,8 +413,88 @@ export default function App() {
 
   return(
     <div style={{fontFamily:"system-ui,sans-serif",maxWidth:520,margin:"0 auto",padding:"1rem 0.75rem",paddingBottom:"env(safe-area-inset-bottom)"}}>
-      <h2 style={{fontSize:18,fontWeight:500,marginBottom:4}}>포모도로 타이머</h2>
-      <p style={{fontSize:13,color:"#666",marginBottom:14}}>작업을 등록하고 스마트하게 집중하세요</p>
+      {/* 알람 화면 깜빡임 */}
+      {flashOn&&(
+        <div style={{position:"fixed",inset:0,zIndex:300,pointerEvents:"none",background:tColor,animation:"alarmFlash 0.5s ease-in-out 3"}}/>
+      )}
+
+      <div style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:4}}>
+        <div style={{flex:1}}>
+          <h2 style={{fontSize:18,fontWeight:500,marginBottom:4}}>포모도로 타이머</h2>
+          <p style={{fontSize:13,color:"#666"}}>작업을 등록하고 스마트하게 집중하세요</p>
+        </div>
+        <button onClick={()=>setShowSettings(true)} title="알람 설정" style={{width:34,height:34,flexShrink:0,fontSize:16,background:"#f7f6f3",color:"#666",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>⚙️</button>
+      </div>
+      <div style={{marginBottom:14}}/>
+
+      {/* 알람 설정 팝업 */}
+      {showSettings&&(
+        <div style={MWRAP} onClick={e=>{if(e.target===e.currentTarget)setShowSettings(false);}}>
+          <div style={MBOX}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+              <span style={{fontSize:14,fontWeight:500,color:"#534AB7",flex:1}}>🔔 알람 설정</span>
+              <button onClick={()=>setShowSettings(false)} style={{background:"none",border:"none",cursor:"pointer",fontSize:22,color:"#aaa",lineHeight:1}}>×</button>
+            </div>
+            <p style={{fontSize:11,color:"#888",marginBottom:14}}>집중/휴식이 끝날 때 알릴 방법을 선택하세요. 여러 개를 함께 켤 수 있어요.</p>
+            {[
+              {k:"sound",label:"🔊 소리",desc:"비프음 또는 직접 넣은 알람음 재생"},
+              {k:"vibration",label:"📳 진동",desc:"휴대폰 진동 (지원 기기에서만)"},
+              {k:"flash",label:"🔴 화면 깜빡임",desc:"화면을 짧게 점멸 — 무음 환경에 적합"},
+            ].map(opt=>(
+              <div key={opt.k} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ede8"}}>
+                <div style={{flex:1}}>
+                  <p style={{fontSize:13,fontWeight:500,margin:"0 0 2px"}}>{opt.label}</p>
+                  <p style={{fontSize:11,color:"#aaa",margin:0}}>{opt.desc}</p>
+                </div>
+                <button onClick={()=>setAlarmCfg(c=>({...c,[opt.k]:!c[opt.k]}))}
+                  style={{width:44,height:24,borderRadius:12,background:alarmCfg[opt.k]?"#534AB7":"#ccc",border:"none",cursor:"pointer",position:"relative",flexShrink:0}}>
+                  <div style={{width:18,height:18,borderRadius:"50%",background:"#fff",position:"absolute",top:3,left:alarmCfg[opt.k]?23:3,transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.25)"}}/>
+                </button>
+              </div>
+            ))}
+            <div style={{marginTop:12,marginBottom:14}}>
+              <p style={LBL}>소리 크기</p>
+              <input type="range" min="0" max="1" step="0.1" value={alarmCfg.volume??0.7}
+                onChange={e=>setAlarmCfg(c=>({...c,volume:Number(e.target.value)}))}
+                style={{width:"100%"}} disabled={!alarmCfg.sound}/>
+            </div>
+            <div style={{display:"flex",gap:8,marginBottom:14}}>
+              <button onClick={()=>fireAlarm(alarmCfg,"focus",setFlashOn)} style={{flex:1,padding:"7px 0",fontSize:12,background:"#f7f6f3",color:"#534AB7",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>집중 종료음 테스트</button>
+              <button onClick={()=>fireAlarm(alarmCfg,"break",setFlashOn)} style={{flex:1,padding:"7px 0",fontSize:12,background:"#f7f6f3",color:"#1D9E75",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>휴식 종료음 테스트</button>
+            </div>
+            <div style={{background:"#f7f6f3",borderRadius:8,padding:"10px 12px",fontSize:11,color:"#888",lineHeight:1.6,marginBottom:14}}>
+              💡 직접 만든 알람음을 쓰고 싶다면, <code>public/sounds/</code> 폴더에 아래 이름으로 mp3 파일을 넣으세요:
+              <br/>· <b>focus-end.mp3</b> — 집중 종료 → 휴식 시작 (작업 전체 완료 시에도 재생)
+              <br/>· <b>break-end.mp3</b> — 휴식 종료 → 집중 시작
+              <br/>파일이 없으면 자동으로 기본 비프음이 재생됩니다.
+            </div>
+
+            <p style={SECT}>배경음악 (BGM)</p>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ede8",marginBottom:10}}>
+              <div style={{flex:1}}>
+                <p style={{fontSize:13,fontWeight:500,margin:"0 0 2px"}}>🎵 세션 중 음악 재생</p>
+                <p style={{fontSize:11,color:"#aaa",margin:0}}>집중용 음악과 휴식용 음악을 따로 재생해요</p>
+              </div>
+              <button onClick={()=>setAlarmCfg(c=>({...c,bgm:!c.bgm}))}
+                style={{width:44,height:24,borderRadius:12,background:alarmCfg.bgm?"#534AB7":"#ccc",border:"none",cursor:"pointer",position:"relative",flexShrink:0}}>
+                <div style={{width:18,height:18,borderRadius:"50%",background:"#fff",position:"absolute",top:3,left:alarmCfg.bgm?23:3,transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.25)"}}/>
+              </button>
+            </div>
+            <div style={{marginBottom:14}}>
+              <p style={LBL}>BGM 음량</p>
+              <input type="range" min="0" max="1" step="0.1" value={alarmCfg.bgmVolume??0.4}
+                onChange={e=>setAlarmCfg(c=>({...c,bgmVolume:Number(e.target.value)}))}
+                style={{width:"100%"}} disabled={!alarmCfg.bgm}/>
+            </div>
+            <div style={{background:"#f7f6f3",borderRadius:8,padding:"10px 12px",fontSize:11,color:"#888",lineHeight:1.6}}>
+              💡 <code>public/sounds/</code> 폴더에 아래 이름으로 mp3 파일을 넣으면 타이머 진행 중 자동 재생됩니다:
+              <br/>· <b>focus-bgm.mp3</b> — 집중 시간 동안 재생할 음악
+              <br/>· <b>break-bgm.mp3</b> — 휴식 시간 동안 재생할 음악
+              <br/>파일이 없으면 재생되지 않습니다 (알람음과는 별개입니다).
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 탭 */}
       <div style={{display:"flex",gap:6,marginBottom:18}}>
