@@ -54,6 +54,16 @@ body {
   margin: 0;
 }
 
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 @keyframes alarmFlash {
   0%, 100% { opacity: 0; }
   50% { opacity: 0.55; }

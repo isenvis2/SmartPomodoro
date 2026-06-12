@@ -804,9 +804,18 @@ export default function App() {
               {editConds.map((c,i)=>(
                 <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                   <span style={{fontSize:12,flex:1}}>{c.label}</span>
-                  <input type="number" min="0.1" max="3" step="0.1" value={c.mult}
-                    onChange={e=>setEditConds(cs=>cs.map((x,xi)=>xi===i?{...x,mult:Number(e.target.value)}:x))}
-                    style={{width:56,padding:"4px 8px",fontSize:12,border:"1px solid #d8d5cf",borderRadius:6,background:"#f7f6f3",textAlign:"center"}}/>
+                  <div style={{display:"flex"}}>
+                    <button type="button"
+                      onClick={()=>setEditConds(cs=>cs.map((x,xi)=>xi===i?{...x,mult:Math.max(0.1,Math.round((x.mult-0.1)*10)/10)}:x))}
+                      style={{width:26,border:"1px solid #d8d5cf",borderRight:"none",borderRadius:"6px 0 0 6px",background:"#e8e5df",color:"#1a1918",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>▼</button>
+                    <input type="number" min="0.1" max="3" step="0.1" value={c.mult}
+                      onChange={e=>setEditConds(cs=>cs.map((x,xi)=>xi===i?{...x,mult:Number(e.target.value)}:x))}
+                      className="no-spinner"
+                      style={{width:48,padding:"4px 8px",fontSize:12,border:"1px solid #d8d5cf",borderLeft:"none",borderRight:"none",borderRadius:0,background:"#f7f6f3",color:"#1a1918",textAlign:"center"}}/>
+                    <button type="button"
+                      onClick={()=>setEditConds(cs=>cs.map((x,xi)=>xi===i?{...x,mult:Math.min(3,Math.round((x.mult+0.1)*10)/10)}:x))}
+                      style={{width:26,border:"1px solid #d8d5cf",borderLeft:"none",borderRadius:"0 6px 6px 0",background:"#e8e5df",color:"#1a1918",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>▲</button>
+                  </div>
                   <input value={c.desc} onChange={e=>setEditConds(cs=>cs.map((x,xi)=>xi===i?{...x,desc:e.target.value}:x))}
                     style={{width:100,padding:"4px 8px",fontSize:11,border:"1px solid #d8d5cf",borderRadius:6,background:"#f7f6f3",color:"#666"}}/>
                 </div>
