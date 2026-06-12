@@ -425,6 +425,9 @@ export default function App() {
     }
   },[]);
   const bgmUrlRef=useRef(null); // 현재 사용 중인 blob URL (해제용)
+  const bgmPosRef=useRef({}); // 트랙(key)별 마지막 재생 위치(초) — 1시간 넘는 긴 곡도 이어듣기
+  const bgmShouldPlayRef=useRef(false); // 비동기 전환 콜백이 도중에 일시정지된 상태인지 재확인하기 위한 최신 상태
+  bgmShouldPlayRef.current=!!(alarmCfg.bgm&&session&&running);
   useEffect(()=>{
     const audio=bgmRef.current;
     if(!audio)return;
@@ -438,25 +441,35 @@ export default function App() {
     const name=(kind==="focus"?tObj?.bgmFocusName:tObj?.bgmBreakName)||"";
     const key=session.tid+"|"+kind+"|"+name;
     if(audio.dataset.key===key){
-      if(audio.paused){audio.volume=0;audio.play().then(()=>fadeAudio(audio,vol,300)).catch(()=>{});}
+      if(audio.paused){
+        if(!bgmShouldPlayRef.current)return;
+        audio.volume=0;audio.play().then(()=>{if(bgmShouldPlayRef.current)fadeAudio(audio,vol,300);else audio.pause();}).catch(()=>{});
+      }
       else if(!audio._fadeTimer)audio.volume=vol;
       return;
     }
     let cancelled=false;
     // 단계 전환: 현재 곡을 부드럽게 줄인 뒤, 알람음과 겹치지 않게 잠시 쉬었다가 새 곡 시작
     fadeAudio(audio,0,250,()=>{
+      // 전환되는 트랙의 재생 위치를 저장해두고, 다음에 같은 트랙으로 돌아오면 이어서 재생
+      if(audio.dataset.key)bgmPosRef.current[audio.dataset.key]=audio.currentTime;
       audio.pause();
       setTimeout(async ()=>{
-        if(cancelled)return;
+        if(cancelled||!bgmShouldPlayRef.current)return;
         const src=await getBgmSrc(session.tid,kind);
-        if(cancelled)return;
+        if(cancelled||!bgmShouldPlayRef.current)return;
         if(bgmUrlRef.current){URL.revokeObjectURL(bgmUrlRef.current);bgmUrlRef.current=null;}
         if(src.startsWith("blob:"))bgmUrlRef.current=src;
         audio.src=src;
         audio.dataset.key=key;
-        audio.currentTime=0;
+        const resumeAt=bgmPosRef.current[key]||0;
+        if(resumeAt>0){
+          audio.addEventListener("loadedmetadata",()=>{audio.currentTime=resumeAt;},{once:true});
+        }else{
+          audio.currentTime=0;
+        }
         audio.volume=0;
-        audio.play().then(()=>fadeAudio(audio,vol,400)).catch(()=>{});
+        audio.play().then(()=>{if(bgmShouldPlayRef.current)fadeAudio(audio,vol,400);else audio.pause();}).catch(()=>{});
       },900);
     });
     return ()=>{cancelled=true;};
@@ -464,7 +477,10 @@ export default function App() {
   useEffect(()=>{
     if(!session&&bgmRef.current){
       const audio=bgmRef.current;
-      fadeAudio(audio,0,250,()=>{audio.pause();audio.dataset.key="";});
+      fadeAudio(audio,0,250,()=>{
+        if(audio.dataset.key)bgmPosRef.current[audio.dataset.key]=audio.currentTime;
+        audio.pause();audio.dataset.key="";
+      });
     }
   },[session]);
 
