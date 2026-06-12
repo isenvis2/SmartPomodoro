@@ -27,7 +27,71 @@ const ALARM_FILES={focus:"/sounds/focus-end.mp3",break:"/sounds/break-end.mp3"};
 //  - "focus": 집중 시간 동안 재생
 //  - "break": 짧은/긴 휴식 시간 동안 재생
 const BGM_FILES={focus:"/sounds/focus-bgm.mp3",break:"/sounds/break-bgm.mp3"};
-const DEF_ALARM={sound:true,vibration:true,flash:true,volume:0.7,bgm:false,bgmVolume:0.4};
+// bgmLib: 사용자가 파일 선택으로 추가한 음악 묶음. 각 작업은 이 중 하나(또는 "default"/"none")를 선택해 사용합니다.
+// 실제 음원 파일은 IndexedDB에 저장되고, bgmLib에는 이름/표시용 정보만 보관합니다.
+// 예: {id:"bgm_172...", name:"독서용", focusName:"잔잔한 음악.mp3", breakName:"휴식곡.mp3"}
+const DEF_ALARM={sound:true,vibration:true,flash:true,volume:0.7,bgm:false,bgmVolume:0.4,bgmLib:[],bgmDefaultNames:{}};
+
+// ── BGM 파일 저장(IndexedDB) ──
+// 사용자가 직접 선택한 음악 파일을 브라우저에 저장해 재사용합니다.
+const BGM_DB="pomodoroBgmDB", BGM_STORE="files";
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    if(typeof indexedDB==="undefined")return rej(new Error("no indexedDB"));
+    const req=indexedDB.open(BGM_DB,1);
+    req.onupgradeneeded=()=>req.result.createObjectStore(BGM_STORE);
+    req.onsuccess=()=>res(req.result);
+    req.onerror=()=>rej(req.error);
+  });
+}
+async function idbPut(key,blob){
+  const db=await idbOpen();
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(BGM_STORE,"readwrite");
+    tx.objectStore(BGM_STORE).put(blob,key);
+    tx.oncomplete=()=>res();
+    tx.onerror=()=>rej(tx.error);
+  });
+}
+async function idbGet(key){
+  const db=await idbOpen();
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(BGM_STORE,"readonly");
+    const req=tx.objectStore(BGM_STORE).get(key);
+    req.onsuccess=()=>res(req.result);
+    req.onerror=()=>rej(req.error);
+  });
+}
+async function idbDel(key){
+  const db=await idbOpen();
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(BGM_STORE,"readwrite");
+    tx.objectStore(BGM_STORE).delete(key);
+    tx.oncomplete=()=>res();
+    tx.onerror=()=>rej(tx.error);
+  });
+}
+// 작업에 설정된 BGM 선택값(task.bgm)과 단계(kind)에 맞는 재생 URL을 가져옴
+// 사용자가 선택한 파일이 있으면 그 파일을, 없으면 public/sounds/의 기본 파일을 사용
+async function getBgmSrc(sel,kind){
+  const dbKey=(sel==="default"?"default":sel)+"|"+kind;
+  try{
+    const blob=await idbGet(dbKey);
+    if(blob instanceof Blob)return URL.createObjectURL(blob);
+  }catch(e){}
+  return BGM_FILES[kind];
+}
+// BGM 페이드 인/아웃 (전환 시 겹침/끊김 방지)
+function fadeAudio(audio,to,ms,cb){
+  if(audio._fadeTimer)clearInterval(audio._fadeTimer);
+  const from=audio.volume,steps=8,stepMs=Math.max(16,ms/steps);
+  let i=0;
+  audio._fadeTimer=setInterval(()=>{
+    i++;
+    audio.volume=Math.max(0,Math.min(1,from+(to-from)*(i/steps)));
+    if(i>=steps){clearInterval(audio._fadeTimer);audio._fadeTimer=null;cb&&cb();}
+  },stepMs);
+}
 let _actx=null;
 function beep(freq=880,dur=180,delay=0,vol=0.3,type="sine"){
   try{
@@ -132,7 +196,7 @@ function buildTL(sch,n) {
 function emptyCfg(){return{on:false,repeat:"none",time:"08:00",weekdays:[],monthDay:1};}
 function makeTask(name,em,rc,gid) {
   const s=calcSch(Number(em),Number(rc));
-  return{id:Date.now(),name,em:Number(em),rc:Number(rc),gid,sch:s,done:false,goalL:"",goalS:"",quote:"",cfg:emptyCfg()};
+  return{id:Date.now(),name,em:Number(em),rc:Number(rc),gid,sch:s,done:false,goalL:"",goalS:"",quote:"",cfg:emptyCfg(),bgm:"default"};
 }
 function taskMatchesDay(t,wd,date,isToday) {
   const cfg=t.cfg;
@@ -188,7 +252,9 @@ export default function App() {
   const [pSec,setPSec]=useState(0);
   const [totPSec,setTotPSec]=useState(0);
   const [saveStatus,setSaveStatus]=useState("");
-  const [alarmCfg,setAlarmCfg]=useState(saved?.alarmCfg||DEF_ALARM);
+  const [alarmCfg,setAlarmCfg]=useState(saved?.alarmCfg?{...DEF_ALARM,...saved.alarmCfg}:DEF_ALARM);
+  const [newBgm,setNewBgm]=useState({name:"",focusFile:null,breakFile:null});
+  const [bgmBusy,setBgmBusy]=useState(false);
   const [flashOn,setFlashOn]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
   const iRef=useRef(null);
@@ -255,7 +321,7 @@ export default function App() {
   }
 
   function openEdit(t){
-    setEditF({...t,_em:t.em,fps:t.sch.fps,sb:t.sch.sb,lb:t.sch.lb,le:t.sch.le,schedule:t.cfg||emptyCfg()});
+    setEditF({...t,_em:t.em,fps:t.sch.fps,sb:t.sch.sb,lb:t.sch.lb,le:t.sch.le,schedule:t.cfg||emptyCfg(),bgm:t.bgm||"default"});
     setEditConds(conds);
   }
   function saveEdit(){
@@ -264,7 +330,7 @@ export default function App() {
     const{tot}=calcTot(fps,rc,sb,lb,le);
     setTasks(ts=>ts.map(x=>x.id!==editF.id?x:{...x,name:editF.name,em:tot,rc,
       sch:{fps,sb,lb,le,lc:Math.floor(rc/Math.max(1,le)),sc:Math.max(0,rc-1-Math.floor(rc/Math.max(1,le))),total:tot},
-      goalL:editF.goalL||"",goalS:editF.goalS||"",quote:editF.quote||"",cfg:editF.schedule||emptyCfg()}));
+      goalL:editF.goalL||"",goalS:editF.goalS||"",quote:editF.quote||"",cfg:editF.schedule||emptyCfg(),bgm:editF.bgm||"default"}));
     setConds(editConds);setEditF(null);
   }
   function delTask(id){setTasks(ts=>ts.filter(x=>x.id!==id));setEditF(null);}
@@ -350,20 +416,52 @@ export default function App() {
       bgmRef.current=a;
     }
   },[]);
+  const bgmUrlRef=useRef(null); // 현재 사용 중인 blob URL (해제용)
   useEffect(()=>{
     const audio=bgmRef.current;
     if(!audio)return;
-    if(!alarmCfg.bgm||!session||!running){audio.pause();return;}
-    const kind=session.phase===FOCUS?"focus":"break";
-    if(audio.dataset.kind!==kind){
-      audio.src=BGM_FILES[kind];
-      audio.dataset.kind=kind;
+    const vol=alarmCfg.bgmVolume??0.4;
+    if(!alarmCfg.bgm||!session||!running){
+      fadeAudio(audio,0,250,()=>audio.pause());
+      return;
     }
-    audio.volume=alarmCfg.bgmVolume??0.4;
-    audio.play().catch(()=>{});
-  },[session?.phase,running,alarmCfg.bgm,alarmCfg.bgmVolume]);
+    const tObj=tasks.find(t=>t.id===session.tid);
+    const sel=tObj?.bgm||"default";
+    if(sel==="none"){
+      fadeAudio(audio,0,250,()=>audio.pause());
+      return;
+    }
+    const kind=session.phase===FOCUS?"focus":"break";
+    const key=sel+"|"+kind;
+    if(audio.dataset.key===key){
+      if(audio.paused){audio.volume=0;audio.play().then(()=>fadeAudio(audio,vol,300)).catch(()=>{});}
+      else if(!audio._fadeTimer)audio.volume=vol;
+      return;
+    }
+    let cancelled=false;
+    // 단계 전환: 현재 곡을 부드럽게 줄인 뒤, 알람음과 겹치지 않게 잠시 쉬었다가 새 곡 시작
+    fadeAudio(audio,0,250,()=>{
+      audio.pause();
+      setTimeout(async ()=>{
+        if(cancelled)return;
+        const src=await getBgmSrc(sel,kind);
+        if(cancelled)return;
+        if(bgmUrlRef.current){URL.revokeObjectURL(bgmUrlRef.current);bgmUrlRef.current=null;}
+        if(src.startsWith("blob:"))bgmUrlRef.current=src;
+        audio.src=src;
+        audio.dataset.key=key;
+        audio.currentTime=0;
+        audio.volume=0;
+        audio.play().then(()=>fadeAudio(audio,vol,400)).catch(()=>{});
+      },900);
+    });
+    return ()=>{cancelled=true;};
+  },[session?.phase,session?.tid,running,alarmCfg.bgm,alarmCfg.bgmVolume,alarmCfg.bgmLib,alarmCfg.bgmDefaultNames,tasks]);
   useEffect(()=>{
-    if(!session&&bgmRef.current)bgmRef.current.pause();
+    if(!session&&bgmRef.current){
+      const audio=bgmRef.current;
+      fadeAudio(audio,0,250,()=>{audio.pause();audio.dataset.key="";});
+    }
   },[session]);
 
   function startTask(task,cond){
@@ -486,11 +584,46 @@ export default function App() {
                 onChange={e=>setAlarmCfg(c=>({...c,bgmVolume:Number(e.target.value)}))}
                 style={{width:"100%"}} disabled={!alarmCfg.bgm}/>
             </div>
-            <div style={{background:"#f7f6f3",borderRadius:8,padding:"10px 12px",fontSize:11,color:"#888",lineHeight:1.6}}>
-              💡 <code>public/sounds/</code> 폴더에 아래 이름으로 mp3 파일을 넣으면 타이머 진행 중 자동 재생됩니다:
+            <div style={{background:"#f7f6f3",borderRadius:8,padding:"10px 12px",fontSize:11,color:"#888",lineHeight:1.6,marginBottom:14}}>
+              💡 <code>public/sounds/</code> 폴더에 아래 이름으로 mp3 파일을 넣으면 타이머 진행 중 자동 재생됩니다(기본 BGM):
               <br/>· <b>focus-bgm.mp3</b> — 집중 시간 동안 재생할 음악
               <br/>· <b>break-bgm.mp3</b> — 휴식 시간 동안 재생할 음악
               <br/>파일이 없으면 재생되지 않습니다 (알람음과는 별개입니다).
+            </div>
+
+            <p style={SECT}>작업별 음악 묶음</p>
+            <p style={{fontSize:11,color:"#888",marginBottom:10}}>
+              예: 독서엔 잔잔한 음악, 단거리 인터벌엔 신나는 음악처럼 작업마다 다른 BGM을 쓰고 싶다면 묶음을 추가하세요.
+              <code>public/sounds/</code>에 파일을 넣고 파일명을 입력하면, 작업 수정 화면의 "배경음악"에서 선택할 수 있어요.
+            </p>
+            {(alarmCfg.bgmLib||[]).map(l=>(
+              <div key={l.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",marginBottom:6,background:"#f7f6f3",borderRadius:8}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <p style={{fontSize:12,fontWeight:500,margin:"0 0 2px"}}>{l.name}</p>
+                  <p style={{fontSize:10,color:"#aaa",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>집중: {l.focus||"-"} · 휴식: {l.break||"-"}</p>
+                </div>
+                <button onClick={()=>setAlarmCfg(c=>({...c,bgmLib:(c.bgmLib||[]).filter(x=>x.id!==l.id)}))}
+                  style={{fontSize:11,padding:"4px 10px",background:"transparent",color:"#E24B4A",border:"1px solid #E24B4A50",borderRadius:6,cursor:"pointer",flexShrink:0}}>삭제</button>
+              </div>
+            ))}
+            <div style={{background:"#f7f6f3",borderRadius:8,padding:"10px",marginBottom:14}}>
+              <p style={LBL}>묶음 이름</p>
+              <input value={newBgm.name} onChange={e=>setNewBgm(b=>({...b,name:e.target.value}))} placeholder="예: 독서용" style={{...INP,marginBottom:8}}/>
+              <div style={{display:"flex",gap:8,marginBottom:8}}>
+                <div style={{flex:1}}>
+                  <p style={LBL}>집중용 파일명</p>
+                  <input value={newBgm.focus} onChange={e=>setNewBgm(b=>({...b,focus:e.target.value}))} placeholder="reading-focus.mp3" style={INP}/>
+                </div>
+                <div style={{flex:1}}>
+                  <p style={LBL}>휴식용 파일명</p>
+                  <input value={newBgm.break} onChange={e=>setNewBgm(b=>({...b,break:e.target.value}))} placeholder="reading-break.mp3" style={INP}/>
+                </div>
+              </div>
+              <button onClick={()=>{
+                if(!newBgm.name.trim())return;
+                setAlarmCfg(c=>({...c,bgmLib:[...(c.bgmLib||[]),{id:"bgm_"+Date.now(),name:newBgm.name.trim(),focus:newBgm.focus.trim(),break:newBgm.break.trim()}]}));
+                setNewBgm({name:"",focus:"",break:""});
+              }} style={{width:"100%",padding:"7px 0",fontSize:12,background:"#534AB7",color:"#fff",border:"none",borderRadius:8,cursor:"pointer"}}>+ 묶음 추가</button>
             </div>
           </div>
         </div>
@@ -661,6 +794,16 @@ export default function App() {
             <p style={LBL}>장기 목표</p><input value={editF.goalL||""} onChange={e=>setEditF(f=>({...f,goalL:e.target.value}))} placeholder="예: 마라톤 완주" style={{...INP,marginBottom:8}}/>
             <p style={LBL}>단기 목표</p><input value={editF.goalS||""} onChange={e=>setEditF(f=>({...f,goalS:e.target.value}))} placeholder="예: 오늘 5km" style={{...INP,marginBottom:8}}/>
             <p style={LBL}>명언</p><input value={editF.quote||""} onChange={e=>setEditF(f=>({...f,quote:e.target.value}))} placeholder='"시작이 반이다"' style={{...INP,marginBottom:14}}/>
+            <p style={SECT}>배경음악</p>
+            <p style={LBL}>이 작업에 사용할 음악</p>
+            <select value={editF.bgm||"default"} onChange={e=>setEditF(f=>({...f,bgm:e.target.value}))} style={{...INP,marginBottom:4}}>
+              <option value="default">기본 BGM (focus-bgm / break-bgm)</option>
+              <option value="none">사용 안 함</option>
+              {(alarmCfg.bgmLib||[]).map(l=>(
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </select>
+            <p style={{fontSize:10,color:"#aaa",marginBottom:14}}>⚙️ 알람설정에서 음악 묶음을 추가하면 작업별로 다른 음악을 선택할 수 있어요.</p>
             <p style={SECT}>컨디션 배율</p>
             <div style={{marginBottom:14}}>
               {editConds.map((c,i)=>(
