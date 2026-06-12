@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
+// 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
+const APP_VERSION="1.6.0";
+
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
 function lsSave(tasks, groups, conds, alarmCfg) {
@@ -27,7 +30,7 @@ const ALARM_FILES={focus:"/sounds/focus-end.mp3",break:"/sounds/break-end.mp3"};
 //  - "focus": 집중 시간 동안 재생
 //  - "break": 짧은/긴 휴식 시간 동안 재생
 const BGM_FILES={focus:"/sounds/focus-bgm.mp3",break:"/sounds/break-bgm.mp3"};
-const DEF_ALARM={sound:true,vibration:true,flash:true,volume:0.7,bgm:false,bgmVolume:0.4};
+const DEF_ALARM={sound:true,vibration:true,flash:true,volume:0.7,bgmVolume:0.4,alarmDuration:5};
 
 // ── BGM 파일 저장(IndexedDB) ──
 // 사용자가 직접 선택한 음악 파일을 브라우저에 저장해 재사용합니다.
@@ -106,15 +109,22 @@ function beepPattern(kind,vol){
   if(kind==="focus"){beep(784,150,0,vol);beep(1047,260,180,vol);}
   else{beep(659,220,0,vol);}
 }
+let _alarmAudio=null; // 현재 재생 중인 알람음 (전환 시 정리용)
 function fireAlarm(cfg,kind,setFlashOn){
   if(!cfg)cfg=DEF_ALARM;
   if(cfg.sound){
+    if(_alarmAudio){_alarmAudio.pause();_alarmAudio=null;}
     const a=new Audio(ALARM_FILES[kind]);
     a.volume=cfg.volume??0.7;
     let fellBack=false;
     const fb=()=>{if(fellBack)return;fellBack=true;beepPattern(kind,cfg.volume??0.3);};
     a.addEventListener("error",fb);
-    a.play().catch(fb);
+    a.addEventListener("ended",()=>{if(_alarmAudio===a)_alarmAudio=null;});
+    const maxMs=(cfg.alarmDuration??DEF_ALARM.alarmDuration)*1000;
+    a.play().then(()=>{
+      _alarmAudio=a;
+      setTimeout(()=>{if(_alarmAudio===a){fadeAudio(a,0,250,()=>{a.pause();if(_alarmAudio===a)_alarmAudio=null;});}},maxMs);
+    }).catch(fb);
   }
   if(cfg.vibration&&navigator.vibrate){
     navigator.vibrate(kind==="focus"?[200,100,200]:[400]);
@@ -427,12 +437,12 @@ export default function App() {
   const bgmUrlRef=useRef(null); // 현재 사용 중인 blob URL (해제용)
   const bgmPosRef=useRef({}); // 트랙(key)별 마지막 재생 위치(초) — 1시간 넘는 긴 곡도 이어듣기
   const bgmShouldPlayRef=useRef(false); // 비동기 전환 콜백이 도중에 일시정지된 상태인지 재확인하기 위한 최신 상태
-  bgmShouldPlayRef.current=!!(alarmCfg.bgm&&session&&running);
+  bgmShouldPlayRef.current=!!(session&&running);
   useEffect(()=>{
     const audio=bgmRef.current;
     if(!audio)return;
     const vol=alarmCfg.bgmVolume??0.4;
-    if(!alarmCfg.bgm||!session||!running){
+    if(!session||!running){
       fadeAudio(audio,0,250,()=>audio.pause());
       return;
     }
@@ -473,7 +483,7 @@ export default function App() {
       },900);
     });
     return ()=>{cancelled=true;};
-  },[session?.phase,session?.tid,running,alarmCfg.bgm,alarmCfg.bgmVolume,tasks]);
+  },[session?.phase,session?.tid,running,alarmCfg.bgmVolume,tasks]);
   useEffect(()=>{
     if(!session&&bgmRef.current){
       const audio=bgmRef.current;
@@ -538,7 +548,10 @@ export default function App() {
 
       <div style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:4}}>
         <div style={{flex:1}}>
-          <h2 style={{fontSize:18,fontWeight:500,marginBottom:4}}>포모도로 타이머</h2>
+          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+            <h2 style={{fontSize:18,fontWeight:500,marginBottom:4}}>포모도로 타이머</h2>
+            <span style={{fontSize:10,color:"#aaa",fontWeight:400}}>v{APP_VERSION}</span>
+          </div>
           <p style={{fontSize:13,color:"#666"}}>작업을 등록하고 스마트하게 집중하세요</p>
         </div>
         <button onClick={()=>setShowSettings(true)} title="알람 설정" style={{display:"flex",alignItems:"center",gap:5,height:34,flexShrink:0,padding:"0 12px",fontSize:12,fontWeight:500,background:"#f7f6f3",color:"#534AB7",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>⚙️ 알람설정</button>
@@ -580,35 +593,20 @@ export default function App() {
               <button onClick={()=>fireAlarm(alarmCfg,"focus",setFlashOn)} style={{flex:1,padding:"7px 0",fontSize:12,background:"#f7f6f3",color:"#534AB7",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>집중 종료음 테스트</button>
               <button onClick={()=>fireAlarm(alarmCfg,"break",setFlashOn)} style={{flex:1,padding:"7px 0",fontSize:12,background:"#f7f6f3",color:"#1D9E75",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>휴식 종료음 테스트</button>
             </div>
-            <div style={{background:"#f7f6f3",borderRadius:8,padding:"10px 12px",fontSize:11,color:"#888",lineHeight:1.6,marginBottom:14}}>
+            <div style={{marginBottom:14}}>
+              <p style={LBL}>알람음 재생 시간</p>
+              <div style={{display:"flex",gap:8}}>
+                {[3,5,10,15].map(sec=>(
+                  <button key={sec} onClick={()=>setAlarmCfg(c=>({...c,alarmDuration:sec}))}
+                    style={{flex:1,padding:"7px 0",fontSize:12,background:(alarmCfg.alarmDuration??5)===sec?"#534AB7":"#f7f6f3",color:(alarmCfg.alarmDuration??5)===sec?"#fff":"#666",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>{sec}초</button>
+                ))}
+              </div>
+            </div>
+            <div style={{background:"#f7f6f3",borderRadius:8,padding:"10px 12px",fontSize:11,color:"#888",lineHeight:1.6}}>
               💡 직접 만든 알람음을 쓰고 싶다면, <code>public/sounds/</code> 폴더에 아래 이름으로 mp3 파일을 넣으세요:
               <br/>· <b>focus-end.mp3</b> — 집중 종료 → 휴식 시작 (작업 전체 완료 시에도 재생)
               <br/>· <b>break-end.mp3</b> — 휴식 종료 → 집중 시작
-              <br/>파일이 없으면 자동으로 기본 비프음이 재생됩니다.
-            </div>
-
-            <p style={SECT}>배경음악 (BGM)</p>
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0ede8",marginBottom:10}}>
-              <div style={{flex:1}}>
-                <p style={{fontSize:13,fontWeight:500,margin:"0 0 2px"}}>🎵 세션 중 음악 재생</p>
-                <p style={{fontSize:11,color:"#aaa",margin:0}}>집중용 음악과 휴식용 음악을 따로 재생해요</p>
-              </div>
-              <button onClick={()=>setAlarmCfg(c=>({...c,bgm:!c.bgm}))}
-                style={{width:44,height:24,borderRadius:12,background:alarmCfg.bgm?"#534AB7":"#ccc",border:"none",cursor:"pointer",position:"relative",flexShrink:0}}>
-                <div style={{width:18,height:18,borderRadius:"50%",background:"#fff",position:"absolute",top:3,left:alarmCfg.bgm?23:3,transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.25)"}}/>
-              </button>
-            </div>
-            <div style={{marginBottom:14}}>
-              <p style={LBL}>BGM 음량</p>
-              <input type="range" min="0" max="1" step="0.1" value={alarmCfg.bgmVolume??0.4}
-                onChange={e=>setAlarmCfg(c=>({...c,bgmVolume:Number(e.target.value)}))}
-                style={{width:"100%"}} disabled={!alarmCfg.bgm}/>
-            </div>
-            <div style={{background:"#f7f6f3",borderRadius:8,padding:"10px 12px",fontSize:11,color:"#888",lineHeight:1.6}}>
-              💡 <code>public/sounds/</code> 폴더에 아래 이름으로 mp3 파일을 넣으면 타이머 진행 중 기본으로 재생됩니다:
-              <br/>· <b>focus-bgm.mp3</b> — 집중 시간 동안 재생할 음악
-              <br/>· <b>break-bgm.mp3</b> — 휴식 시간 동안 재생할 음악
-              <br/>각 작업마다 다른 음악을 쓰고 싶다면, 작업 수정 화면의 "배경음악"에서 파일을 직접 선택할 수 있어요. 선택하지 않으면 위 기본 음악이 재생됩니다.
+              <br/>파일이 없으면 자동으로 기본 비프음이 재생됩니다. 긴 음악 파일을 넣어도 위에서 설정한 시간만큼만 재생됩니다.
             </div>
           </div>
         </div>
@@ -814,7 +812,7 @@ export default function App() {
                   style={{padding:"0 12px",fontSize:12,background:"transparent",color:"#E24B4A",border:"1px solid #E24B4A50",borderRadius:8,cursor:"pointer"}}>×</button>
               )}
             </div>
-            <p style={{fontSize:10,color:"#aaa",marginBottom:14}}>⚙️ 알람설정의 "세션 중 음악 재생"이 켜져 있어야 동작하며, 파일을 선택하지 않으면 기본 BGM(focus-bgm / break-bgm)이 재생됩니다.</p>
+            <p style={{fontSize:10,color:"#aaa",marginBottom:14}}>⚙️ 파일을 선택하지 않으면 기본 BGM(focus-bgm / break-bgm)이 재생됩니다.</p>
             <p style={SECT}>컨디션 배율</p>
             <div style={{marginBottom:14}}>
               {editConds.map((c,i)=>(
