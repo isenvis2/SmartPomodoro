@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.6.0";
+const APP_VERSION="1.7.0";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
 function lsSave(tasks, groups, conds, alarmCfg) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({
-      tasks, groups, conds, alarmCfg, savedAt: new Date().toISOString()
+      tasks, groups, conds, alarmCfg, presetsSeeded:true, savedAt: new Date().toISOString()
     }));
   } catch(e) { console.warn("저장 실패", e); }
 }
@@ -199,9 +199,45 @@ function buildTL(sch,n) {
   return b;
 }
 function emptyCfg(){return{on:false,repeat:"none",time:"08:00",weekdays:[],monthDay:1};}
+let _idSeq=0;
+function uid(){return Date.now()*1000+(_idSeq++%1000);}
 function makeTask(name,em,rc,gid) {
   const s=calcSch(Number(em),Number(rc));
-  return{id:Date.now(),name,em:Number(em),rc:Number(rc),gid,sch:s,done:false,goalL:"",goalS:"",quote:"",cfg:emptyCfg()};
+  return{id:uid(),name,em:Number(em),rc:Number(rc),gid,sch:s,completions:[],goalL:"",goalS:"",quote:"",cfg:emptyCfg()};
+}
+// 저장된 작업 목록을 새 구조에 맞게 마이그레이션하고, 그룹의 "빠른 추가" 프리셋을
+// 실제 작업으로 한 번만 추가합니다(이후 수정/시작/삭제/복사/정렬 가능).
+function migrateTasks(saved) {
+  const existing=(saved?.tasks||[]).map(t=>{
+    if(t.completions)return t;
+    const{done,...rest}=t;
+    return{...rest,completions:done?[new Date().toISOString()]:[]};
+  });
+  if(saved?.presetsSeeded)return existing;
+  const seeded=[...existing];
+  DEF_GROUPS.forEach(g=>{
+    (g.presets||[]).forEach(p=>{
+      if(!seeded.some(t=>t.gid===g.id&&t.name===p.name)){
+        seeded.push(makeTask(p.name,p.em,p.rc,g.id));
+      }
+    });
+  });
+  return seeded;
+}
+// 작업의 "오늘/이번주/이번달" 완료 횟수 — completions: 완료 시각(ISO) 배열
+function countCompletions(completions,now){
+  const today=now.toDateString();
+  const diff=now.getDay()===0?-6:1-now.getDay();
+  const weekStart=new Date(now);weekStart.setDate(now.getDate()+diff);weekStart.setHours(0,0,0,0);
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+  let day=0,week=0,month=0;
+  for(const iso of completions||[]){
+    const d=new Date(iso);
+    if(d.toDateString()===today)day++;
+    if(d>=weekStart)week++;
+    if(d>=monthStart)month++;
+  }
+  return{day,week,month};
 }
 function taskMatchesDay(t,wd,date,isToday) {
   const cfg=t.cfg;
@@ -235,7 +271,7 @@ export default function App() {
   const [groups,setGroups]=useState(saved?.groups||DEF_GROUPS);
   const [conds,setConds]=useState(saved?.conds||DEF_CONDS);
   const [selGid,setSelGid]=useState("exercise");
-  const [tasks,setTasks]=useState(saved?.tasks||[]);
+  const [tasks,setTasks]=useState(()=>migrateTasks(saved));
   const [scheduleAlert,setScheduleAlert]=useState(null);
   const [confirmModal,setConfirmModal]=useState(null); // {message, onConfirm}
   function askConfirm(message,onConfirm){setConfirmModal({message,onConfirm});}
@@ -352,6 +388,28 @@ export default function App() {
     idbDel(`task_${id}|focus`).catch(()=>{});
     idbDel(`task_${id}|break`).catch(()=>{});
   }
+  function copyTask(task){
+    setTasks(ts=>{
+      const idx=ts.findIndex(x=>x.id===task.id);
+      const copy={...task,id:uid(),name:task.name+" 복사",completions:[],bgmFocusName:"",bgmBreakName:""};
+      const next=[...ts];
+      next.splice(idx+1,0,copy);
+      return next;
+    });
+  }
+  function moveTask(id,dir){
+    setTasks(ts=>{
+      const idx=ts.findIndex(x=>x.id===id);
+      if(idx<0)return ts;
+      const gid=ts[idx].gid;
+      let j=idx+dir;
+      while(j>=0&&j<ts.length&&ts[j].gid!==gid)j+=dir;
+      if(j<0||j>=ts.length)return ts;
+      const next=[...ts];
+      [next[idx],next[j]]=[next[j],next[idx]];
+      return next;
+    });
+  }
   function acEdit(em,rc){
     if(!em||!rc||Number(rc)<1)return;
     const s=calcSch(Number(em),Number(rc));
@@ -376,7 +434,7 @@ export default function App() {
             setLog(l=>[...l,{name:s.name,gid:s.gid,min:s.sch.fps,num:nc,cid:s.cid,
               time:new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}]);
             if(nc>=s.total){
-              setTasks(ts=>ts.map(t=>t.id===s.tid?{...t,done:true}:t));
+              setTasks(ts=>ts.map(t=>t.id===s.tid?{...t,completions:[...(t.completions||[]),new Date().toISOString()]}:t));
               fireAlarm(alarmRef.current,"focus",setFlashOn);
               return null;
             }
@@ -978,44 +1036,38 @@ export default function App() {
                 <button onClick={()=>delGroup(selGid)} style={{fontSize:11,padding:"3px 8px",background:"transparent",color:"#aaa",border:"1px solid #e0ddd8",borderRadius:6,cursor:"pointer"}}>삭제</button>
               )}
             </div>
-            {selG.presets.length>0&&(
-              <div style={{marginBottom:12}}>
-                <p style={{fontSize:11,color:"#aaa",marginBottom:6}}>빠른 추가</p>
-                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                  {selG.presets.map(p=>(
-                    <button key={p.name} onClick={()=>setTasks(ts=>[...ts,makeTask(p.name,p.em,p.rc,selGid)])}
-                      style={{fontSize:11,padding:"4px 10px",background:selG.bg,color:selG.color,border:`1px solid ${selG.color}50`,borderRadius:6,cursor:"pointer"}}>+ {p.name}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {tasks.filter(t=>t.gid===selGid).map(task=>{
+            {(()=>{
+              const list=tasks.filter(t=>t.gid===selGid);
+              return list.map((task,idx)=>{
               const g2=getGrp(groups,task.gid);
               const sc=task.cfg;
+              const cnt=countCompletions(task.completions,new Date());
               return(
                 <div key={task.id} style={{padding:"10px 0",borderBottom:"1px solid #f0ede8"}}>
                   <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                        <p style={{fontSize:13,fontWeight:500,margin:0,color:task.done?"#1D9E75":"#1a1918",textDecoration:task.done?"line-through":"none"}}>{task.name}</p>
+                        <p style={{fontSize:13,fontWeight:500,margin:0,color:"#1a1918"}}>{task.name}</p>
                         {sc?.on&&<span style={{fontSize:9,padding:"2px 6px",background:g2.bg,color:g2.color,border:`1px solid ${g2.color}50`,borderRadius:20,flexShrink:0}}>{sc.time}</span>}
                       </div>
                       <p style={{fontSize:11,color:"#888",margin:"2px 0 0"}}>집중 {task.sch.fps}분×{task.rc}회 · {task.em}분</p>
                       {task.goalL&&<p style={{fontSize:10,color:"#aaa",margin:"2px 0 0"}}>🎯 {task.goalL}</p>}
+                      <p style={{fontSize:10,color:"#aaa",margin:"2px 0 0"}}>오늘 {cnt.day}번 · 이번주 {cnt.week}번 · 이번달 {cnt.month}번</p>
                     </div>
-                    <div style={{display:"flex",gap:5,flexShrink:0}}>
+                    <div style={{display:"flex",gap:5,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:160}}>
+                      <button onClick={()=>moveTask(task.id,-1)} disabled={idx===0} style={{fontSize:11,padding:"4px 8px",background:"#f7f6f3",color:idx===0?"#ccc":"#555",border:"1px solid #d8d5cf",borderRadius:6,cursor:idx===0?"default":"pointer"}}>위로</button>
+                      <button onClick={()=>moveTask(task.id,1)} disabled={idx===list.length-1} style={{fontSize:11,padding:"4px 8px",background:"#f7f6f3",color:idx===list.length-1?"#ccc":"#555",border:"1px solid #d8d5cf",borderRadius:6,cursor:idx===list.length-1?"default":"pointer"}}>아래로</button>
+                      <button onClick={()=>copyTask(task)} style={{fontSize:11,padding:"4px 10px",background:"#f7f6f3",color:"#555",border:"1px solid #d8d5cf",borderRadius:6,cursor:"pointer"}}>복사</button>
                       <button onClick={()=>openEdit(task)} style={{fontSize:11,padding:"4px 10px",background:"#f7f6f3",color:"#555",border:"1px solid #d8d5cf",borderRadius:6,cursor:"pointer"}}>수정</button>
-                      {task.done
-                        ?<span style={{fontSize:11,color:"#1D9E75",background:"#E1F5EE",padding:"4px 10px",borderRadius:6}}>완료</span>
-                        :<button onClick={()=>setStartMod(task)} style={{fontSize:11,padding:"4px 12px",background:g2.color,color:"#fff",border:"none",borderRadius:6,cursor:"pointer"}}>시작</button>
-                      }
+                      <button onClick={()=>setStartMod(task)} style={{fontSize:11,padding:"4px 12px",background:g2.color,color:"#fff",border:"none",borderRadius:6,cursor:"pointer"}}>시작</button>
                       <button onClick={()=>delTask(task.id)} style={{fontSize:11,padding:"4px 10px",background:"transparent",color:"#E24B4A",border:"1px solid #E24B4A50",borderRadius:6,cursor:"pointer"}}>삭제</button>
                     </div>
                   </div>
                 </div>
               );
-            })}
-            {tasks.filter(t=>t.gid===selGid).length===0&&selG.presets.length===0&&(
+              });
+            })()}
+            {tasks.filter(t=>t.gid===selGid).length===0&&(
               <p style={{fontSize:12,color:"#aaa",margin:"4px 0 12px"}}>아직 등록된 작업이 없습니다.</p>
             )}
             <button onClick={()=>setAddF({gid:selGid,name:"",em:"",rc:""})}
@@ -1103,7 +1155,7 @@ export default function App() {
       {tab==="report"&&(
         <div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20}}>
-            {[{label:"총 집중",value:focMin+"분"},{label:"완료 세션",value:log.length+"회"},{label:"완료 작업",value:tasks.filter(t=>t.done).length+"개"}].map(c=>(
+            {[{label:"총 집중",value:focMin+"분"},{label:"완료 세션",value:log.length+"회"},{label:"오늘 완료",value:tasks.reduce((s,t)=>s+countCompletions(t.completions,new Date()).day,0)+"회"}].map(c=>(
               <div key={c.label} style={{background:"#f7f6f3",borderRadius:8,padding:"12px 10px",textAlign:"center"}}>
                 <p style={{fontSize:11,color:"#888",margin:"0 0 4px"}}>{c.label}</p>
                 <p style={{fontSize:20,fontWeight:500,margin:0}}>{c.value}</p>
