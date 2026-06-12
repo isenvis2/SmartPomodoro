@@ -423,7 +423,7 @@ export default function App() {
           <h2 style={{fontSize:18,fontWeight:500,marginBottom:4}}>포모도로 타이머</h2>
           <p style={{fontSize:13,color:"#666"}}>작업을 등록하고 스마트하게 집중하세요</p>
         </div>
-        <button onClick={()=>setShowSettings(true)} title="알람 설정" style={{width:34,height:34,flexShrink:0,fontSize:16,background:"#f7f6f3",color:"#666",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>⚙️</button>
+        <button onClick={()=>setShowSettings(true)} title="알람 설정" style={{display:"flex",alignItems:"center",gap:5,height:34,flexShrink:0,padding:"0 12px",fontSize:12,fontWeight:500,background:"#f7f6f3",color:"#534AB7",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>⚙️ 알람설정</button>
       </div>
       <div style={{marginBottom:14}}/>
 
