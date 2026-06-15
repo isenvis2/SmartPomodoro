@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.7.0";
+const APP_VERSION="1.7.1";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -180,8 +180,12 @@ function calcTot(fps,rc,sb,lb,le) {
 function applyCond(task,cond) {
   const m=cond.mult||1;
   const am=Math.round(task.em*m),ar=Math.max(1,Math.round(task.rc*m));
-  const s=calcSch(am,ar);
-  return{...s,am,ar};
+  const fps=Math.max(1,Math.round(task.sch.fps*m));
+  const sb=Math.max(1,Math.round(task.sch.sb*m));
+  const lb=Math.max(1,Math.round(task.sch.lb*m));
+  const le=task.sch.le;
+  const{tot,lc,sc}=calcTot(fps,ar,sb,lb,le);
+  return{fps,sb,lb,le,lc,sc,total:tot,am,ar};
 }
 function fmtT(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}
 function arcPath(pct,r=78) {
