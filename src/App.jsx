@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.8.1";
+const APP_VERSION="1.9.0";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -163,29 +163,24 @@ const DEF_GROUPS=[
 ];
 
 // ── 유틸 ──
-function calcSch(em,rc) {
+// focusRatio: 전체 시간 중 집중 비율(%), breakRatio: 긴휴식÷짧은휴식 비율, le: 긴휴식 간격(횟수)
+function calcSch(em,rc,focusRatio=80,breakRatio=3,le=4) {
   const n=Math.max(1,Math.round(rc));
-  const tf=Math.round(em*.8),tr=em-tf;
-  const fps=Math.max(5,Math.round(tf/n));
-  const lc=Math.floor(n/4),sc=Math.max(0,n-1-lc),d=sc+3*lc;
+  const fr=Math.min(95,Math.max(5,Number(focusRatio)||80))/100;
+  const br=Math.max(1,Number(breakRatio)||3);
+  const le2=Math.max(1,Math.round(Number(le)||4));
+  const tf=Math.round(em*fr),tr=em-tf;
+  const fps=Math.max(1,Math.round(tf/n));
+  const lc=Math.floor(n/le2),sc=Math.max(0,n-1-lc),d=sc+br*lc;
   let sb,lb;
-  if(!d){sb=5;lb=15;}else{sb=Math.max(1,Math.round(tr/d));lb=Math.max(sb+1,Math.round(sb*3));}
-  return{fps,sb,lb,le:4,lc,sc,total:fps*n+sb*sc+lb*lc};
-}
-function calcTot(fps,rc,sb,lb,le) {
-  const n=Number(rc)||0,le2=Math.max(1,Number(le)||4);
-  const lc=Math.floor(n/le2),sc=Math.max(0,n-1-lc);
-  return{tot:(Number(fps)||0)*n+(Number(sb)||0)*sc+(Number(lb)||0)*lc,lc,sc};
+  if(!d){sb=5;lb=15;}else{sb=Math.max(1,Math.round(tr/d));lb=Math.max(sb,Math.round(sb*br));}
+  return{fps,sb,lb,le:le2,lc,sc,total:fps*n+sb*sc+lb*lc};
 }
 function applyCond(task,cond) {
   const m=cond.mult||1;
   const am=Math.round(task.em*m),ar=Math.max(1,Math.round(task.rc*m));
-  const fps=Math.max(1,Math.round(task.sch.fps*m));
-  const sb=Math.max(1,Math.round(task.sch.sb*m));
-  const lb=Math.max(1,Math.round(task.sch.lb*m));
-  const le=task.sch.le;
-  const{tot,lc,sc}=calcTot(fps,ar,sb,lb,le);
-  return{fps,sb,lb,le,lc,sc,total:tot,am,ar};
+  const s=calcSch(am,ar,task.focusRatio??80,task.breakRatio??3,task.sch.le);
+  return{...s,am,ar};
 }
 function fmtT(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}
 function arcPath(pct,r=78) {
@@ -205,17 +200,18 @@ function buildTL(sch,n) {
 function emptyCfg(){return{on:false,repeat:"none",time:"08:00",weekdays:[],monthDay:1};}
 let _idSeq=0;
 function uid(){return Date.now()*1000+(_idSeq++%1000);}
-function makeTask(name,em,rc,gid) {
-  const s=calcSch(Number(em),Number(rc));
-  return{id:uid(),name,em:Number(em),rc:Number(rc),gid,sch:s,completions:[],goalL:"",goalS:"",quote:"",cfg:emptyCfg(),miniFps:5,miniRc:1,miniSb:0};
+function makeTask(name,em,rc,gid,focusRatio=80,breakRatio=3,le=4) {
+  const s=calcSch(Number(em),Number(rc),focusRatio,breakRatio,le);
+  return{id:uid(),name,em:Number(em),rc:Number(rc),gid,sch:s,focusRatio,breakRatio,completions:[],goalL:"",goalS:"",quote:"",cfg:emptyCfg(),miniFps:5,miniRc:1,miniSb:0};
 }
 // 저장된 작업 목록을 새 구조에 맞게 마이그레이션하고, 그룹의 "빠른 추가" 프리셋을
 // 실제 작업으로 한 번만 추가합니다(이후 수정/시작/삭제/복사/정렬 가능).
 function migrateTasks(saved) {
   const existing=(saved?.tasks||[]).map(t=>{
     const withMini=t.miniFps?t:{...t,miniFps:t.miniMin||5,miniRc:1,miniSb:0};
-    if(withMini.completions)return withMini;
-    const{done,...rest}=withMini;
+    const withRatio=withMini.focusRatio!=null?withMini:{...withMini,focusRatio:80,breakRatio:3};
+    if(withRatio.completions)return withRatio;
+    const{done,...rest}=withRatio;
     return{...rest,completions:done?[new Date().toISOString()]:[]};
   });
   if(saved?.presetsSeeded)return existing;
@@ -316,9 +312,9 @@ export default function App() {
   const s2p=PPM/60;
   const aSegs=[...pSegs,...lSegs];
   const progPx=aSegs.reduce((a,s)=>a+s.px,0);
-  const addPrev=addF&&addF.em&&addF.rc&&Number(addF.rc)>0?calcSch(Number(addF.em),Number(addF.rc)):null;
+  const addPrev=addF&&addF.em&&addF.rc&&Number(addF.rc)>0?calcSch(Number(addF.em),Number(addF.rc),addF.focusRatio,addF.breakRatio,addF.le):null;
   const editG=editF?getGrp(groups,editF.gid):null;
-  const editTot=editF?calcTot(editF.fps,editF.rc,editF.sb,editF.lb,editF.le):null;
+  const editPrev=editF&&Number(editF._em)>0&&Number(editF.rc)>0?calcSch(Number(editF._em),Number(editF.rc),editF.focusRatio,editF.breakRatio,editF.le):null;
   const addG=addF?getGrp(groups,addF.gid):null;
   const focMin=log.reduce((a,b)=>a+b.min,0);
   const todayWd=(now.getDay()+6)%7;
@@ -367,17 +363,17 @@ export default function App() {
   }
 
   function openEdit(t){
-    setEditF({...t,_em:t.em,fps:t.sch.fps,sb:t.sch.sb,lb:t.sch.lb,le:t.sch.le,schedule:t.cfg||emptyCfg(),
+    setEditF({...t,_em:t.em,rc:t.rc,focusRatio:t.focusRatio??80,breakRatio:t.breakRatio??3,le:t.sch.le,schedule:t.cfg||emptyCfg(),
       miniFps:t.miniFps||5,miniRc:t.miniRc||1,miniSb:t.miniSb??0,
       bgmFocusName:t.bgmFocusName||"",bgmBreakName:t.bgmBreakName||"",_bgmFocusFile:null,_bgmBreakFile:null});
     setEditConds(conds);
   }
   async function saveEdit(){
     if(!editF)return;
-    const rc=Number(editF.rc),fps=Number(editF.fps),sb=Number(editF.sb),lb=Number(editF.lb),le=Number(editF.le);
-    const{tot}=calcTot(fps,rc,sb,lb,le);
-    setTasks(ts=>ts.map(x=>x.id!==editF.id?x:{...x,name:editF.name,em:tot,rc,
-      sch:{fps,sb,lb,le,lc:Math.floor(rc/Math.max(1,le)),sc:Math.max(0,rc-1-Math.floor(rc/Math.max(1,le))),total:tot},
+    const em=Number(editF._em),rc=Number(editF.rc);
+    const focusRatio=Number(editF.focusRatio)||80,breakRatio=Number(editF.breakRatio)||3,le=Math.max(1,Math.round(Number(editF.le)||4));
+    const s=calcSch(em,rc,focusRatio,breakRatio,le);
+    setTasks(ts=>ts.map(x=>x.id!==editF.id?x:{...x,name:editF.name,em,rc,sch:s,focusRatio,breakRatio,
       goalL:editF.goalL||"",goalS:editF.goalS||"",quote:editF.quote||"",cfg:editF.schedule||emptyCfg(),
       miniFps:Math.max(1,Math.round(Number(editF.miniFps)||5)),
       miniRc:Math.max(1,Math.round(Number(editF.miniRc)||1)),
@@ -418,11 +414,6 @@ export default function App() {
       [next[idx],next[j]]=[next[j],next[idx]];
       return next;
     });
-  }
-  function acEdit(em,rc){
-    if(!em||!rc||Number(rc)<1)return;
-    const s=calcSch(Number(em),Number(rc));
-    setEditF(f=>({...f,fps:s.fps,sb:s.sb,lb:s.lb,le:s.le}));
   }
 
   const tick=useCallback(()=>{
@@ -774,21 +765,39 @@ export default function App() {
             <input value={editF.name} onChange={e=>setEditF(f=>({...f,name:e.target.value}))} style={{...INP,marginBottom:8}}/>
             <div style={{display:"flex",gap:8,marginBottom:12}}>
               <div style={{flex:1}}><p style={LBL}>예상 시간(분)</p>
-                <input type="number" min="1" value={editF._em||""} onChange={e=>{setEditF(f=>({...f,_em:e.target.value}));acEdit(e.target.value,editF.rc);}} style={INP}/></div>
+                <input type="number" min="1" value={editF._em||""} onChange={e=>setEditF(f=>({...f,_em:e.target.value}))} style={INP}/></div>
               <div style={{flex:1}}><p style={LBL}>반복 횟수</p>
-                <input type="number" min="1" value={editF.rc} onChange={e=>{setEditF(f=>({...f,rc:e.target.value}));acEdit(editF._em,e.target.value);}} style={INP}/></div>
+                <input type="number" min="1" value={editF.rc} onChange={e=>setEditF(f=>({...f,rc:e.target.value}))} style={INP}/></div>
             </div>
             <p style={SECT}>세부 설정</p>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-              {[{k:"fps",l:"집중(분)"},{k:"sb",l:"짧은 휴식(분)"},{k:"lb",l:"긴 휴식(분)"},{k:"le",l:"긴 휴식 주기"}].map(({k,l})=>(
-                <div key={k}><p style={LBL}>{l}</p>
-                  <input type="number" min="1" value={editF[k]||""} onChange={e=>setEditF(f=>({...f,[k]:e.target.value}))} style={{...INP,fontWeight:500}}/></div>
+            <p style={{fontSize:11,color:"#aaa",margin:"-4px 0 8px"}}>학습/자기계발은 집중비율 80% 안팎, 육체적인 작업은 50% 안팎이 적당합니다. 익숙해지면 비율을 조금씩 올려보세요.</p>
+            <div style={{marginBottom:8}}>
+              {[
+                {k:"focusRatio",l:"집중 비율(%)",min:10,max:95,step:5},
+                {k:"breakRatio",l:"긴휴식 : 짧은휴식 비율",min:1,max:5,step:0.5},
+                {k:"le",l:"긴휴식 간격(회)",min:1,max:10,step:1},
+              ].map(({k,l,min,max,step})=>(
+                <div key={k} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontSize:12,flex:1}}>{l}</span>
+                  <div style={{display:"flex"}}>
+                    <button type="button"
+                      onClick={()=>setEditF(f=>({...f,[k]:Math.max(min,Math.round(((Number(f[k])||min)-step)*10)/10)}))}
+                      style={{width:26,border:"1px solid #d8d5cf",borderRight:"none",borderRadius:"6px 0 0 6px",background:"#e8e5df",color:"#1a1918",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>▼</button>
+                    <input type="number" min={min} max={max} step={step} value={editF[k]}
+                      onChange={e=>setEditF(f=>({...f,[k]:e.target.value}))}
+                      className="no-spinner"
+                      style={{width:56,padding:"4px 8px",fontSize:12,border:"1px solid #d8d5cf",borderLeft:"none",borderRight:"none",borderRadius:0,background:"#f7f6f3",color:"#1a1918",textAlign:"center"}}/>
+                    <button type="button"
+                      onClick={()=>setEditF(f=>({...f,[k]:Math.min(max,Math.round(((Number(f[k])||min)+step)*10)/10)}))}
+                      style={{width:26,border:"1px solid #d8d5cf",borderLeft:"none",borderRadius:"0 6px 6px 0",background:"#e8e5df",color:"#1a1918",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>▲</button>
+                  </div>
+                </div>
               ))}
             </div>
-            {editTot&&Number(editF.rc)>0&&Number(editF.fps)>0&&(
+            {editPrev&&(
               <div style={{fontSize:11,color:"#555",background:"#f7f6f3",borderRadius:6,padding:"6px 10px",marginBottom:14}}>
-                <span style={{fontWeight:600}}>총 {editTot.tot}분</span>
-                <span style={{marginLeft:6,color:"#888"}}>= 집중 {editF.fps}×{editF.rc} + 짧은 {editF.sb}×{editTot.sc} + 긴 {editF.lb}×{editTot.lc}</span>
+                <span style={{fontWeight:600}}>총 {editPrev.total}분</span>
+                <span style={{marginLeft:6,color:"#888"}}>= 집중 {editPrev.fps}×{editF.rc} + 짧은 {editPrev.sb}×{editPrev.sc} + 긴 {editPrev.lb}×{editPrev.lc}</span>
               </div>
             )}
             <p style={SECT}>예약</p>
@@ -963,11 +972,34 @@ export default function App() {
               <div style={{flex:1}}><p style={LBL}>예상 시간(분)</p><input type="number" min="1" value={addF.em} onChange={e=>setAddF(f=>({...f,em:e.target.value}))} style={INP}/></div>
               <div style={{flex:1}}><p style={LBL}>반복 횟수</p><input type="number" min="1" value={addF.rc} onChange={e=>setAddF(f=>({...f,rc:e.target.value}))} style={INP}/></div>
             </div>
+            <div style={{marginBottom:8}}>
+              {[
+                {k:"focusRatio",l:"집중 비율(%)",min:10,max:95,step:5},
+                {k:"breakRatio",l:"긴휴식 : 짧은휴식 비율",min:1,max:5,step:0.5},
+                {k:"le",l:"긴휴식 간격(회)",min:1,max:10,step:1},
+              ].map(({k,l,min,max,step})=>(
+                <div key={k} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontSize:12,flex:1}}>{l}</span>
+                  <div style={{display:"flex"}}>
+                    <button type="button"
+                      onClick={()=>setAddF(f=>({...f,[k]:Math.max(min,Math.round(((Number(f[k])||min)-step)*10)/10)}))}
+                      style={{width:26,border:"1px solid #d8d5cf",borderRight:"none",borderRadius:"6px 0 0 6px",background:"#e8e5df",color:"#1a1918",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>▼</button>
+                    <input type="number" min={min} max={max} step={step} value={addF[k]}
+                      onChange={e=>setAddF(f=>({...f,[k]:e.target.value}))}
+                      className="no-spinner"
+                      style={{width:56,padding:"4px 8px",fontSize:12,border:"1px solid #d8d5cf",borderLeft:"none",borderRight:"none",borderRadius:0,background:"#f7f6f3",color:"#1a1918",textAlign:"center"}}/>
+                    <button type="button"
+                      onClick={()=>setAddF(f=>({...f,[k]:Math.min(max,Math.round(((Number(f[k])||min)+step)*10)/10)}))}
+                      style={{width:26,border:"1px solid #d8d5cf",borderLeft:"none",borderRadius:"0 6px 6px 0",background:"#e8e5df",color:"#1a1918",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>▲</button>
+                  </div>
+                </div>
+              ))}
+            </div>
             {addPrev&&<div style={{fontSize:11,color:"#555",background:"#f7f6f3",borderRadius:6,padding:"6px 10px",marginBottom:10}}>
               집중 {addPrev.fps}분×{addF.rc}회 · 짧은휴식 {addPrev.sb}분 · 긴휴식 {addPrev.lb}분 · <b>총 {addPrev.total}분</b>
             </div>}
             <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>{if(!addF.name||!addF.em||!addF.rc)return;setTasks(ts=>[...ts,makeTask(addF.name,addF.em,addF.rc,addF.gid)]);setAddF(null);}}
+              <button onClick={()=>{if(!addF.name||!addF.em||!addF.rc)return;setTasks(ts=>[...ts,makeTask(addF.name,addF.em,addF.rc,addF.gid,Number(addF.focusRatio)||80,Number(addF.breakRatio)||3,Math.max(1,Math.round(Number(addF.le)||4)))]);setAddF(null);}}
                 style={{flex:1,padding:"7px 0",fontSize:13,background:addG.color,color:"#fff",border:"none",borderRadius:8,cursor:"pointer"}}>추가</button>
               <button onClick={()=>setAddF(null)} style={{padding:"7px 14px",fontSize:13,background:"transparent",color:"#888",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>취소</button>
             </div>
@@ -983,13 +1015,12 @@ export default function App() {
             <p style={{fontSize:12,color:"#666",marginBottom:14}}>오늘 컨디션을 선택하세요</p>
             {conds.map(cond=>{
               const r=applyCond(startMod,cond);
-              const{tot}=calcTot(r.fps,r.ar,r.sb,r.lb,4);
               return(
                 <button key={cond.id} onClick={()=>startTask(startMod,cond)}
                   style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"10px 14px",marginBottom:8,background:"#f7f6f3",border:"1px solid #e0ddd8",borderRadius:8,cursor:"pointer",textAlign:"left"}}>
                   <div style={{flex:1}}>
                     <p style={{fontSize:13,fontWeight:500,margin:"0 0 2px"}}>{cond.label} <span style={{fontSize:11,fontWeight:400,color:"#888"}}>— {cond.desc}</span></p>
-                    <p style={{fontSize:11,color:"#666",margin:0}}>집중 {r.fps}분×{r.ar}회 · 총 {tot}분</p>
+                    <p style={{fontSize:11,color:"#666",margin:0}}>집중 {r.fps}분×{r.ar}회 · 총 {r.total}분</p>
                   </div>
                 </button>
               );
@@ -1127,7 +1158,7 @@ export default function App() {
             {tasks.filter(t=>t.gid===selGid).length===0&&(
               <p style={{fontSize:12,color:"#aaa",margin:"4px 0 12px"}}>아직 등록된 작업이 없습니다.</p>
             )}
-            <button onClick={()=>setAddF({gid:selGid,name:"",em:"",rc:""})}
+            <button onClick={()=>setAddF({gid:selGid,name:"",em:"",rc:"",focusRatio:80,breakRatio:3,le:4})}
               style={{width:"100%",marginTop:12,padding:"8px 0",fontSize:13,background:"transparent",color:selG.color,border:`1px dashed ${selG.color}`,borderRadius:8,cursor:"pointer"}}>
               + 작업 추가
             </button>
