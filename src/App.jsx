@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.7.1";
+const APP_VERSION="1.8.1";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -207,14 +207,15 @@ let _idSeq=0;
 function uid(){return Date.now()*1000+(_idSeq++%1000);}
 function makeTask(name,em,rc,gid) {
   const s=calcSch(Number(em),Number(rc));
-  return{id:uid(),name,em:Number(em),rc:Number(rc),gid,sch:s,completions:[],goalL:"",goalS:"",quote:"",cfg:emptyCfg()};
+  return{id:uid(),name,em:Number(em),rc:Number(rc),gid,sch:s,completions:[],goalL:"",goalS:"",quote:"",cfg:emptyCfg(),miniFps:5,miniRc:1,miniSb:0};
 }
 // 저장된 작업 목록을 새 구조에 맞게 마이그레이션하고, 그룹의 "빠른 추가" 프리셋을
 // 실제 작업으로 한 번만 추가합니다(이후 수정/시작/삭제/복사/정렬 가능).
 function migrateTasks(saved) {
   const existing=(saved?.tasks||[]).map(t=>{
-    if(t.completions)return t;
-    const{done,...rest}=t;
+    const withMini=t.miniFps?t:{...t,miniFps:t.miniMin||5,miniRc:1,miniSb:0};
+    if(withMini.completions)return withMini;
+    const{done,...rest}=withMini;
     return{...rest,completions:done?[new Date().toISOString()]:[]};
   });
   if(saved?.presetsSeeded)return existing;
@@ -367,6 +368,7 @@ export default function App() {
 
   function openEdit(t){
     setEditF({...t,_em:t.em,fps:t.sch.fps,sb:t.sch.sb,lb:t.sch.lb,le:t.sch.le,schedule:t.cfg||emptyCfg(),
+      miniFps:t.miniFps||5,miniRc:t.miniRc||1,miniSb:t.miniSb??0,
       bgmFocusName:t.bgmFocusName||"",bgmBreakName:t.bgmBreakName||"",_bgmFocusFile:null,_bgmBreakFile:null});
     setEditConds(conds);
   }
@@ -377,6 +379,9 @@ export default function App() {
     setTasks(ts=>ts.map(x=>x.id!==editF.id?x:{...x,name:editF.name,em:tot,rc,
       sch:{fps,sb,lb,le,lc:Math.floor(rc/Math.max(1,le)),sc:Math.max(0,rc-1-Math.floor(rc/Math.max(1,le))),total:tot},
       goalL:editF.goalL||"",goalS:editF.goalS||"",quote:editF.quote||"",cfg:editF.schedule||emptyCfg(),
+      miniFps:Math.max(1,Math.round(Number(editF.miniFps)||5)),
+      miniRc:Math.max(1,Math.round(Number(editF.miniRc)||1)),
+      miniSb:Math.max(0,Math.round(Number(editF.miniSb)||0)),
       bgmFocusName:editF.bgmFocusName||"",bgmBreakName:editF.bgmBreakName||""}));
     setConds(editConds);
     const id=editF.id;
@@ -564,6 +569,19 @@ export default function App() {
     setPSegs([]);setLSegs([{color:PH_COLOR[FOCUS],px:0}]);
     setSession({tid:task.id,name:task.name,gid:task.gid,sch,phase:FOCUS,done:0,total:r.ar,cid:cond.id});
     setTLeft(r.fps*60);setRunning(false);setPSec(0);setTotPSec(0);
+    setStartMod(null);setTab("timer");
+  }
+
+  function startMini(task){
+    clearInterval(iRef.current);clearInterval(paRef.current);
+    const fps=Math.max(1,Math.round(Number(task.miniFps)||5));
+    const rc=Math.max(1,Math.round(Number(task.miniRc)||1));
+    const sb=Math.max(0,Math.round(Number(task.miniSb)||0));
+    const sch={fps,sb,lb:sb,le:4};
+    setTl(buildTL(sch,rc));
+    setPSegs([]);setLSegs([{color:PH_COLOR[FOCUS],px:0}]);
+    setSession({tid:task.id,name:task.name,gid:task.gid,sch,phase:FOCUS,done:0,total:rc,cid:"mini"});
+    setTLeft(fps*60);setRunning(false);setPSec(0);setTotPSec(0);
     setStartMod(null);setTab("timer");
   }
   function addGroup(){
@@ -897,6 +915,31 @@ export default function App() {
                 </div>
               ))}
             </div>
+            <p style={SECT}>미니 작업</p>
+            <p style={{fontSize:11,color:"#aaa",margin:"-4px 0 8px"}}>바쁠 때도 짧게 끝내서 "했다"는 기록을 남깁니다.</p>
+            <div style={{marginBottom:14}}>
+              {[
+                {k:"miniFps",l:"집중(분)",min:1},
+                {k:"miniRc",l:"횟수(회)",min:1},
+                {k:"miniSb",l:"짧은 휴식(분)",min:0},
+              ].map(({k,l,min})=>(
+                <div key={k} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontSize:12,flex:1}}>{l}</span>
+                  <div style={{display:"flex"}}>
+                    <button type="button"
+                      onClick={()=>setEditF(f=>({...f,[k]:Math.max(min,Math.round(Number(f[k])||min)-1)}))}
+                      style={{width:26,border:"1px solid #d8d5cf",borderRight:"none",borderRadius:"6px 0 0 6px",background:"#e8e5df",color:"#1a1918",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>▼</button>
+                    <input type="number" min={min} value={editF[k]}
+                      onChange={e=>setEditF(f=>({...f,[k]:e.target.value}))}
+                      className="no-spinner"
+                      style={{width:48,padding:"4px 8px",fontSize:12,border:"1px solid #d8d5cf",borderLeft:"none",borderRight:"none",borderRadius:0,background:"#f7f6f3",color:"#1a1918",textAlign:"center"}}/>
+                    <button type="button"
+                      onClick={()=>setEditF(f=>({...f,[k]:Math.max(min,Math.round(Number(f[k])||min)+1)}))}
+                      style={{width:26,border:"1px solid #d8d5cf",borderLeft:"none",borderRadius:"0 6px 6px 0",background:"#e8e5df",color:"#1a1918",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>▲</button>
+                  </div>
+                </div>
+              ))}
+            </div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={saveEdit} style={{flex:1,padding:"8px 0",fontSize:13,background:editG.color,color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:500}}>저장</button>
               <button onClick={()=>setEditF(null)} style={{padding:"8px 14px",fontSize:13,background:"transparent",color:"#888",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>취소</button>
@@ -951,6 +994,16 @@ export default function App() {
                 </button>
               );
             })}
+            <button onClick={()=>startMini(startMod)}
+              style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"10px 14px",marginBottom:8,background:"#f7f6f3",border:"1px dashed #d8d5cf",borderRadius:8,cursor:"pointer",textAlign:"left"}}>
+              <div style={{flex:1}}>
+                <p style={{fontSize:13,fontWeight:500,margin:"0 0 2px"}}>미니로 끝내기 <span style={{fontSize:11,fontWeight:400,color:"#888"}}>— 바쁠 때도 일단 하기</span></p>
+                <p style={{fontSize:11,color:"#666",margin:0}}>
+                  집중 {startMod.miniFps||5}분×{startMod.miniRc||1}회
+                  {(startMod.miniRc||1)>1&&(startMod.miniSb??0)>0?` · 짧은휴식 ${startMod.miniSb}분`:" · 휴식 없음"}
+                </p>
+              </div>
+            </button>
             <button onClick={()=>setStartMod(null)} style={{width:"100%",marginTop:4,padding:"7px 0",fontSize:12,background:"transparent",color:"#888",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>취소</button>
           </div>
         </div>
