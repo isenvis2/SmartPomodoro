@@ -102,10 +102,8 @@ async function togglePiP(){
   try{
     const pip=await documentPictureInPicture.requestWindow({width:300,height:200,disallowReturnToOpener:false});
     _pipWin=pip;
-    // PiP를 팝업 내용 영역과 같은 위치로 이동
+    // PiP를 팝업 내용 영역과 같은 위치로 이동 (PiP가 항상 위에 있으므로 팝업이 자동으로 가려짐)
     try{pip.moveTo(savedX,savedY+titleBarH);}catch(e){}
-    // 팝업을 화면 밖으로 (opener 유지하면서 숨기기)
-    window.moveTo(-10000,-10000);
     pipBtn.classList.add('active');
     pipBtn.title='항상 위에 해제';
 
@@ -130,12 +128,10 @@ async function togglePiP(){
       _pipWin=null;
       pipBtn.classList.remove('active');
       pipBtn.title='항상 위에 고정';
-      window.moveTo(savedX,savedY);
       window.focus();
     });
   }catch(err){
     console.error('PiP 오류:',err);
-    window.moveTo(savedX,savedY);
   }
 }
 
