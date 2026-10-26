@@ -2,6 +2,11 @@
 
 이 문서는 버전별 주요 변경 사항을 기록합니다. `src/App.jsx`의 `APP_VERSION`과 함께 갱신합니다.
 
+## v1.9.5
+- 미니 팝업/PiP 창 열림 위치를 화면 우하단 기준으로 고정
+  - 팝업: window.open left/top 파라미터로 화면 우하단에서 16px 여백 위치로 고정
+  - PiP: requestWindow 후 pip.moveTo()로 동일 위치 시도
+
 ## v1.9.4
 - 미니 팝업 📌(항상 위에 고정) 동작 개선
   - PiP를 메인 앱(탭)에서 열어 opener 종속성 제거 → 팝업이 닫혀도 PiP 창 유지
