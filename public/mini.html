@@ -95,14 +95,19 @@ async function togglePiP(){
   // PiP 중 → 닫기 (pagehide에서 팝업 복원)
   if(_pipWin&&!_pipWin.closed){_pipWin.close();return;}
 
-  // 현재 팝업 위치/타이틀바 높이 저장
+  // 현재 팝업 위치/크기/타이틀바 높이 저장
   const savedX=window.screenX,savedY=window.screenY;
+  const savedW=window.outerWidth,savedH=window.outerHeight;
   const titleBarH=Math.max(0,window.outerHeight-window.innerHeight);
+
+  // PiP 열기 전 팝업을 1×1로 줄여 화면 밖 모서리로 이동 (PiP 이동 시 팝업 노출 방지)
+  window.resizeTo(1,1);
+  window.moveTo(window.screen.availWidth-1,window.screen.availHeight-1);
+  document.documentElement.style.opacity='0';
 
   try{
     const pip=await documentPictureInPicture.requestWindow({width:300,height:200,disallowReturnToOpener:false});
     _pipWin=pip;
-    // PiP를 팝업 내용 영역과 같은 위치로 이동 (PiP가 항상 위에 있으므로 팝업이 자동으로 가려짐)
     try{pip.moveTo(savedX,savedY+titleBarH);}catch(e){}
     pipBtn.classList.add('active');
     pipBtn.title='항상 위에 해제';
@@ -126,11 +131,17 @@ async function togglePiP(){
 
     pip.addEventListener('pagehide',()=>{
       _pipWin=null;
+      document.documentElement.style.opacity='';
+      window.resizeTo(savedW,savedH);
+      window.moveTo(savedX,savedY);
       pipBtn.classList.remove('active');
       pipBtn.title='항상 위에 고정';
       window.focus();
     });
   }catch(err){
+    document.documentElement.style.opacity='';
+    window.resizeTo(savedW,savedH);
+    window.moveTo(savedX,savedY);
     console.error('PiP 오류:',err);
   }
 }
