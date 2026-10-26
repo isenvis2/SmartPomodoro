@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.9.5";
+const APP_VERSION="1.9.6";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -302,6 +302,7 @@ export default function App() {
   const bcRef=useRef(null);
   const miniWinRef=useRef(null);
   const pipWinRef=useRef(null);
+  const pipOpeningRef=useRef(false);
   const bgmFocusInputRef=useRef(null);
   const bgmBreakInputRef=useRef(null);
   const alarmRef=useRef(alarmCfg);
@@ -530,19 +531,23 @@ export default function App() {
   }
 
   function miniPos(){
-    const W=300,H=200,gap=16;
+    const W=300,H=200,gap=16,titleBarH=30;
     const sw=window.screen.availWidth,sh=window.screen.availHeight;
-    return{left:sw-W-gap,top:sh-H-gap,W,H};
+    // PiP: 타이틀바 없음 → top = sh-H-gap
+    // 팝업: 타이틀바(~30px) 있음 → 내용 상단을 PiP와 맞추려면 창 top을 titleBarH만큼 올림
+    return{left:sw-W-gap,pipTop:sh-H-gap,popupTop:sh-H-titleBarH-gap,W,H};
   }
 
   async function openAsPiP(){
     if(!('documentPictureInPicture' in window)) return;
     if(pipWinRef.current&&!pipWinRef.current.closed){pipWinRef.current.focus();return;}
-    const{left,top,W,H}=miniPos();
+    if(pipOpeningRef.current) return;
+    pipOpeningRef.current=true;
+    const{left,pipTop,W,H}=miniPos();
     try{
       const pip=await documentPictureInPicture.requestWindow({width:W,height:H,disallowReturnToOpener:false});
-      try{pip.moveTo(left,top);}catch(e){}
       pipWinRef.current=pip;
+      try{pip.moveTo(left,pipTop);}catch(e){}
       const css=`*{box-sizing:border-box;margin:0;padding:0}html,body{width:300px;height:200px;overflow:hidden;background:#1a1918;color:#fff;font-family:system-ui,-apple-system,sans-serif;user-select:none;}#bar{position:fixed;top:0;left:0;right:0;height:3px;background:#2a2927}#fill{height:100%;width:0%;transition:width .9s linear}#app{display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;padding:10px 16px 8px;gap:3px}#task{font-size:11px;color:#777;max-width:240px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-height:14px}#time{font-size:52px;font-weight:700;letter-spacing:-2px;line-height:1}#phase{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;opacity:.55;margin-top:1px}#msg{font-size:12px;color:#bbb;margin-top:6px;min-height:18px;text-align:center}#dots{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;justify-content:center;max-width:260px;min-height:10px}.dot{width:8px;height:8px;border-radius:50%;background:#2e2c2a;flex-shrink:0}.done{background:var(--c,#534AB7)}.cur{background:transparent;border:2px solid var(--c,#534AB7)}#idle{text-align:center;color:#444;line-height:1.7}#idle span{font-size:11px;color:#333}#pip-btn{position:fixed;top:6px;right:6px;width:22px;height:22px;border-radius:4px;background:#534AB7;border:1px solid #534AB7;color:#fff;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;}#pip-btn:hover{background:#6358d4;}`;
       const style=pip.document.createElement('style');style.textContent=css;pip.document.head.appendChild(style);
       pip.document.body.innerHTML='<div id="bar"><div id="fill"></div></div><div id="app"><div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div></div><button id="pip-btn" title="항상 위에 해제">📌</button>';
@@ -552,13 +557,14 @@ export default function App() {
       pip.document.getElementById('pip-btn').addEventListener('click',()=>{pip.close();openAsPopup();});
       pip.addEventListener('pagehide',()=>{pipWinRef.current=null;});
     }catch(err){console.error('PiP 오류:',err);}
+    finally{pipOpeningRef.current=false;}
   }
 
   function openAsPopup(){
     if(miniWinRef.current&&!miniWinRef.current.closed){miniWinRef.current.focus();return;}
-    const{left,top,W,H}=miniPos();
+    const{left,popupTop,W,H}=miniPos();
     miniWinRef.current=window.open('/mini.html','pomodoro-mini',
-      `width=${W},height=${H},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=no`);
+      `width=${W},height=${H},left=${left},top=${popupTop},menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=no`);
   }
 
   async function openMiniWindow(){
