@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>⏱ 포모도로</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:300px;height:200px;overflow:hidden;background:#1a1918;color:#fff;
+      font-family:system-ui,-apple-system,sans-serif;user-select:none;}
+    #bar{position:fixed;top:0;left:0;right:0;height:3px;background:#2a2927}
+    #fill{height:100%;width:0%;transition:width .9s linear}
+    #app{display:flex;flex-direction:column;align-items:center;justify-content:center;
+      height:200px;padding:10px 16px 8px;gap:3px}
+    #task{font-size:11px;color:#777;max-width:268px;overflow:hidden;white-space:nowrap;
+      text-overflow:ellipsis;min-height:14px}
+    #time{font-size:52px;font-weight:700;letter-spacing:-2px;line-height:1}
+    #phase{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;opacity:.55;margin-top:1px}
+    #msg{font-size:12px;color:#bbb;margin-top:6px;min-height:18px;text-align:center}
+    #dots{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;justify-content:center;max-width:260px;min-height:10px}
+    .dot{width:8px;height:8px;border-radius:50%;background:#2e2c2a;flex-shrink:0}
+    .done{background:var(--c,#534AB7)}
+    .cur{background:transparent;border:2px solid var(--c,#534AB7)}
+    #idle{text-align:center;color:#444;line-height:1.7}
+    #idle span{font-size:11px;color:#333}
+  </style>
+</head>
+<body>
+  <div id="bar"><div id="fill"></div></div>
+  <div id="app"><div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div></div>
+<script>
+const LABEL={focus:'집중',short:'짧은 휴식',long:'긴 휴식'};
+const MSGS={
+  focus:[
+    [0.00,'집중 시작! 🎯'],
+    [0.15,'잘 하고 있어요! 💪'],
+    [0.40,'훌륭해요, 계속! 🔥'],
+    [0.60,'조금만 더 힘내요! 😤'],
+    [0.80,'거의 다 왔어요! 🏁'],
+    [0.92,'마지막 스퍼트! 💨'],
+  ],
+  short:[[0,'잠깐 쉬어가요 ☕'],[0.5,'곧 다시 시작해요! 🌟']],
+  long:[[0,'충분히 쉬어가요 😌'],[0.5,'재충전 중... 에너지 UP! ⚡']],
+};
+function getMsg(phase,pct,running){
+  if(!running)return'일시정지 중... ⏸';
+  const list=MSGS[phase]||MSGS.short;
+  let m=list[0][1];
+  for(const[th,txt]of list){if(pct>=th)m=txt;}
+  return m;
+}
+function fmt(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
+
+function render(st){
+  const app=document.getElementById('app');
+  const fill=document.getElementById('fill');
+  if(!st||!st.phase){
+    app.innerHTML='<div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div>';
+    fill.style.width='0%';
+    return;
+  }
+  const{running,tLeft,phase,taskName,done,total,phaseTotal,tColor}=st;
+  const c=tColor||'#534AB7';
+  document.documentElement.style.setProperty('--c',c);
+  const pct=phaseTotal>0?Math.max(0,1-tLeft/phaseTotal):0;
+  fill.style.width=(pct*100).toFixed(1)+'%';
+  fill.style.background=c;
+  const msg=getMsg(phase,pct,running);
+  const maxD=Math.min(total,10);
+  const dotsHtml=Array.from({length:maxD},(_,i)=>{
+    const cl=i<done?'dot done':i===done&&phase==='focus'?'dot cur':'dot';
+    return`<div class="${cl}"></div>`;
+  }).join('');
+  app.innerHTML=`
+    <div id="task">${taskName||''}</div>
+    <div id="time" style="color:${c}">${fmt(tLeft)}</div>
+    <div id="phase" style="color:${c}">${LABEL[phase]||phase} &nbsp;${done}/${total}</div>
+    <div id="msg">${msg}</div>
+    <div id="dots">${dotsHtml}</div>`;
+}
+
+// BroadcastChannel으로 메인 창 수신
+const bc=new BroadcastChannel('pomodoro-mini');
+bc.onmessage=e=>render(e.data);
+
+// 페이지 열릴 때 localStorage에서 초기 상태 복원
+try{const s=localStorage.getItem('pomodoro-mini-state');if(s)render(JSON.parse(s));}catch(e){}
+</script>
+</body>
+</html>

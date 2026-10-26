@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.9.0";
+const APP_VERSION="1.9.1";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -299,6 +299,8 @@ export default function App() {
   const [showSettings,setShowSettings]=useState(false);
   const iRef=useRef(null);
   const paRef=useRef(null);
+  const bcRef=useRef(null);
+  const miniWinRef=useRef(null);
   const bgmFocusInputRef=useRef(null);
   const bgmBreakInputRef=useRef(null);
   const alarmRef=useRef(alarmCfg);
@@ -482,6 +484,26 @@ export default function App() {
     }
     return()=>clearInterval(paRef.current);
   },[running,session]);
+
+  // 미니 팝업 브로드캐스트 채널 초기화
+  useEffect(()=>{
+    bcRef.current=new BroadcastChannel('pomodoro-mini');
+    return()=>{bcRef.current?.close();};
+  },[]);
+
+  // 타이머 상태를 미니 팝업으로 전송
+  useEffect(()=>{
+    const state={running,tLeft,phase:session?.phase??null,taskName:session?.name??'',
+      done:session?.done??0,total:session?.total??0,phaseTotal:curPhSec,tColor};
+    bcRef.current?.postMessage(state);
+    try{localStorage.setItem('pomodoro-mini-state',JSON.stringify(state));}catch(e){}
+  },[tLeft,running,session?.phase,session?.tid,session?.done,tColor]);
+
+  function openMiniWindow(){
+    if(miniWinRef.current&&!miniWinRef.current.closed){miniWinRef.current.focus();return;}
+    miniWinRef.current=window.open('/mini.html','pomodoro-mini',
+      'width=300,height=200,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=no');
+  }
 
   // 배경음악(BGM) 재생 — 집중/휴식 단계에 맞춰 곡 전환
   const bgmRef=useRef(null);
@@ -1210,6 +1232,7 @@ export default function App() {
                       <button onClick={toggleRun} style={{padding:"9px 24px",fontSize:14,background:tColor,color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:500}}>{running?"일시정지":"시작"}</button>
                       <button onClick={resetTmr} style={{padding:"9px 14px",fontSize:13,background:"transparent",color:"#666",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>리셋</button>
                       <button onClick={stopSes} style={{padding:"9px 14px",fontSize:13,background:"transparent",color:"#E24B4A",border:"1px solid #E24B4A50",borderRadius:8,cursor:"pointer"}}>종료</button>
+                      <button onClick={openMiniWindow} title="미니 팝업창 열기" style={{padding:"9px 10px",fontSize:13,background:"transparent",color:"#888",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>⛶</button>
                     </div>
                     <div style={{display:"flex",gap:4,marginTop:12,flexWrap:"wrap",justifyContent:"center",maxWidth:192}}>
                       {Array.from({length:session.total}).map((_,i)=>(
