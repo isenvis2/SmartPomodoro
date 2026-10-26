@@ -2,6 +2,15 @@
 
 이 문서는 버전별 주요 변경 사항을 기록합니다. `src/App.jsx`의 `APP_VERSION`과 함께 갱신합니다.
 
+## v2.0.0
+- 📌 항상 위에 고정 구조 전면 재설계
+  - 원인: BroadcastChannel을 통해 requestWindow()를 호출하면 user gesture가 소실되어 PiP 요청이 반복 실패
+  - 해결: mini.html이 직접 PiP를 열고 관리 (App.jsx 중계 코드 완전 제거)
+  - 팝업을 닫지 않고 화면 밖(-10000,-10000)으로 이동해 opener 유지 → PiP가 안정적으로 유지됨
+  - PiP 위치: 팝업 내용 영역(screenX, screenY+타이틀바높이)과 동일 위치로 이동
+  - PiP 닫히면 팝업을 원래 위치로 복원
+  - App.jsx: renderMiniIn/miniPos/openAsPiP 등 불필요 코드 제거, openMiniWindow 단순화
+
 ## v1.9.11
 - PiP→팝업 전환 수정: BroadcastChannel은 자신에게 메시지가 전달되지 않으므로 pipBC(PiP 전용 채널)로 popup-request 전송
 - 팝업 열릴 때 위치 획 움직임 수정: 화면 밖(top=-2000)에서 열고 load 후 측정·이동

@@ -23,16 +23,14 @@
     .cur{background:transparent;border:2px solid var(--c,#534AB7)}
     #idle{text-align:center;color:#444;line-height:1.7}
     #idle span{font-size:11px;color:#333}
-    /* 항상 위에 버튼 */
     #pip-btn{
-      position:fixed;top:6px;right:6px;
-      width:22px;height:22px;border-radius:4px;
-      background:transparent;border:1px solid #3a3937;
-      color:#555;font-size:13px;cursor:pointer;
+      position:fixed;top:6px;right:6px;width:22px;height:22px;border-radius:4px;
+      background:transparent;border:1px solid #3a3937;color:#555;font-size:13px;cursor:pointer;
       display:flex;align-items:center;justify-content:center;
       transition:background .15s,color .15s;z-index:10;
     }
     #pip-btn:hover{background:#2e2c2a;color:#aaa;}
+    #pip-btn.active{background:#534AB7;color:#fff;border-color:#534AB7;}
   </style>
 </head>
 <body>
@@ -42,14 +40,8 @@
 <script>
 const LABEL={focus:'집중',short:'짧은 휴식',long:'긴 휴식'};
 const MSGS={
-  focus:[
-    [0.00,'집중 시작! 🎯'],
-    [0.15,'잘 하고 있어요! 💪'],
-    [0.40,'훌륭해요, 계속! 🔥'],
-    [0.60,'조금만 더 힘내요! 😤'],
-    [0.80,'거의 다 왔어요! 🏁'],
-    [0.92,'마지막 스퍼트! 💨'],
-  ],
+  focus:[[0,'집중 시작! 🎯'],[0.15,'잘 하고 있어요! 💪'],[0.40,'훌륭해요, 계속! 🔥'],
+         [0.60,'조금만 더 힘내요! 😤'],[0.80,'거의 다 왔어요! 🏁'],[0.92,'마지막 스퍼트! 💨']],
   short:[[0,'잠깐 쉬어가요 ☕'],[0.5,'곧 다시 시작해요! 🌟']],
   long:[[0,'충분히 쉬어가요 😌'],[0.5,'재충전 중... 에너지 UP! ⚡']],
 };
@@ -82,35 +74,72 @@ function renderIn(doc,st){
     const cl=i<done?'dot done':i===done&&phase==='focus'?'dot cur':'dot';
     return`<div class="${cl}"></div>`;
   }).join('');
-  app.innerHTML=`
-    <div id="task">${taskName||''}</div>
-    <div id="time" style="color:${c}">${fmt(tLeft)}</div>
-    <div id="phase" style="color:${c}">${LABEL[phase]||phase} &nbsp;${done}/${total}</div>
-    <div id="msg">${msg}</div>
-    <div id="dots">${dotsHtml}</div>`;
+  app.innerHTML=`<div id="task">${taskName||''}</div><div id="time" style="color:${c}">${fmt(tLeft)}</div><div id="phase" style="color:${c}">${LABEL[phase]||phase} &nbsp;${done}/${total}</div><div id="msg">${msg}</div><div id="dots">${dotsHtml}</div>`;
 }
-
 function render(st){renderIn(document,st);}
 
-// BroadcastChannel으로 메인 창 수신
 const bc=new BroadcastChannel('pomodoro-mini');
-bc.onmessage=e=>render(e.data);
-
-// 페이지 열릴 때 localStorage에서 초기 상태 복원
 let _lastState=null;
 try{const s=localStorage.getItem('pomodoro-mini-state');if(s){_lastState=JSON.parse(s);render(_lastState);}}catch(e){}
-bc.onmessage=e=>{_lastState=e.data;render(e.data);};
+bc.onmessage=e=>{if(e.data&&!e.data.type){_lastState=e.data;render(e.data);}};
 
-// ── 항상 위에 고정: 메인 앱에 PiP 요청 ──
+// ── 항상 위에 고정 (팝업에서 직접 PiP 열기) ──
 const pipBtn=document.getElementById('pip-btn');
-pipBtn.addEventListener('click',()=>{
+let _pipWin=null;
+
+async function togglePiP(){
   if(!('documentPictureInPicture' in window)){
-    alert('항상 위에 기능은 Chrome 116 이상에서 지원됩니다.\n\n대신 Windows 키보드 단축키:\n• PowerToys "Always on Top": Win+Ctrl+T\n• 작업 표시줄 아이콘 우클릭 → 항상 위에');
+    alert('항상 위에 기능은 Chrome 116 이상에서 지원됩니다.\n\n대신 Windows 키보드 단축키:\n• PowerToys "Always on Top": Win+Ctrl+T');
     return;
   }
-  // 메인 앱에 PiP 요청 → 메인 앱이 팝업 닫고 PiP 창 열기
-  bc.postMessage({type:'pip-request'});
-});
+  // PiP 중 → 닫기 (pagehide에서 팝업 복원)
+  if(_pipWin&&!_pipWin.closed){_pipWin.close();return;}
+
+  // 현재 팝업 위치/타이틀바 높이 저장
+  const savedX=window.screenX,savedY=window.screenY;
+  const titleBarH=Math.max(0,window.outerHeight-window.innerHeight);
+
+  try{
+    const pip=await documentPictureInPicture.requestWindow({width:300,height:200,disallowReturnToOpener:false});
+    _pipWin=pip;
+    // PiP를 팝업 내용 영역과 같은 위치로 이동
+    try{pip.moveTo(savedX,savedY+titleBarH);}catch(e){}
+    // 팝업을 화면 밖으로 (opener 유지하면서 숨기기)
+    window.moveTo(-10000,-10000);
+    pipBtn.classList.add('active');
+    pipBtn.title='항상 위에 해제';
+
+    // PiP 창에 CSS/HTML 주입
+    const style=pip.document.createElement('style');
+    style.textContent=document.querySelector('style').textContent+
+      '\n#pip-btn{background:#534AB7!important;color:#fff!important;border-color:#534AB7!important;}';
+    pip.document.head.appendChild(style);
+    pip.document.body.innerHTML=
+      '<div id="bar"><div id="fill"></div></div>'+
+      '<div id="app"><div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div></div>'+
+      '<button id="pip-btn" title="항상 위에 해제">📌</button>';
+
+    if(_lastState)renderIn(pip.document,_lastState);
+
+    const pipBC=new pip.BroadcastChannel('pomodoro-mini');
+    pipBC.onmessage=e=>{if(e.data&&!e.data.type){_lastState=e.data;renderIn(pip.document,e.data);}};
+
+    pip.document.getElementById('pip-btn').addEventListener('click',()=>{_pipWin.close();});
+
+    pip.addEventListener('pagehide',()=>{
+      _pipWin=null;
+      pipBtn.classList.remove('active');
+      pipBtn.title='항상 위에 고정';
+      window.moveTo(savedX,savedY);
+      window.focus();
+    });
+  }catch(err){
+    console.error('PiP 오류:',err);
+    window.moveTo(savedX,savedY);
+  }
+}
+
+pipBtn.addEventListener('click',togglePiP);
 </script>
 </body>
 </html>
