@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.9.10";
+const APP_VERSION="1.9.11";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -560,7 +560,7 @@ export default function App() {
       pipBC.onmessage=e=>{if(e.data&&!e.data.type)renderMiniIn(pip.document,e.data);};
       // 📌 클릭 → 메인 앱에 팝업 요청 (메인 앱이 PiP 닫고 팝업 열기)
       pip.document.getElementById('pip-btn').addEventListener('click',()=>{
-        bcRef.current?.postMessage({type:'popup-request'});
+        pipBC.postMessage({type:'popup-request'}); // 다른 인스턴스여야 수신됨
       });
       pip.addEventListener('pagehide',()=>{pipWinRef.current=null;});
     }catch(err){console.error('PiP 오류:',err);}
@@ -569,21 +569,19 @@ export default function App() {
 
   function openAsPopup(){
     if(miniWinRef.current&&!miniWinRef.current.closed){miniWinRef.current.focus();return;}
-    const{left,popupTop,W,H}=miniPos();
+    const{left,W,H}=miniPos();
+    const sh=window.screen.availHeight,gap=16;
+    // 화면 밖에서 열고 측정 후 올바른 위치로 이동 (획 움직임 방지)
     const win=window.open('/mini.html','pomodoro-mini',
-      `width=${W},height=${H},left=${left},top=${popupTop},menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=no`);
+      `width=${W},height=${H},left=${left},top=-2000,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=no`);
     miniWinRef.current=win;
-    // 실제 타이틀바 높이 측정 후 위치 재조정
     if(win){
       win.addEventListener('load',()=>{
         if(win.closed) return;
         const measured=win.outerHeight-win.innerHeight;
-        if(measured>0){
-          titleBarHRef.current=measured;
-          const{left:l,W:w,H:h}=miniPos();
-          const sh=window.screen.availHeight,gap=16;
-          win.moveTo(l,sh-h-measured-gap);
-        }
+        const titleBarH=measured>0?measured:titleBarHRef.current;
+        if(measured>0) titleBarHRef.current=measured;
+        win.moveTo(left, sh-H-titleBarH-gap);
       },{once:true});
     }
   }
