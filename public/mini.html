@@ -98,7 +98,7 @@ pipBtn.addEventListener('click',()=>{
     return;
   }
   const type=IS_PIP?'popup-request':'pip-request';
-  try{window.opener?.postMessage({type},location.origin,{includeUserActivation:true});}catch(e){}
+  try{window.opener?.postMessage({type},{targetOrigin:location.origin,includeUserActivation:true});}catch(e){}
   window.close();
 });
 </script>
