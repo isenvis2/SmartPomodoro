@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.9.9";
+const APP_VERSION="1.9.10";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -588,11 +588,10 @@ export default function App() {
     }
   }
 
-  async function openMiniWindow(){
+  function openMiniWindow(){
     if(pipWinRef.current&&!pipWinRef.current.closed){pipWinRef.current.focus();return;}
     if(miniWinRef.current&&!miniWinRef.current.closed){miniWinRef.current.focus();return;}
-    if('documentPictureInPicture' in window){await openAsPiP();}
-    else{openAsPopup();}
+    openAsPopup(); // 처음엔 팝업으로, 📌 버튼으로 PiP 전환
   }
 
   // 배경음악(BGM) 재생 — 집중/휴식 단계에 맞춰 곡 전환
