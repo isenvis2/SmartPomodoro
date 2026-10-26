@@ -143,14 +143,10 @@ async function openPiP(){
     const pipBC=new pip.BroadcastChannel('pomodoro-mini');
     pipBC.onmessage=e=>{_lastState=e.data;renderIn(pip.document,e.data);};
 
-    pip.addEventListener('pagehide',()=>{
-      _pipWin=null;
-      pipBtn.classList.remove('active');
-      pipBtn.title='항상 위에 고정';
-    });
+    // PiP 창이 열렸으면 팝업 자신을 닫아 창이 하나만 남도록 함
+    window.close();
   }catch(err){
     console.error('PiP 오류:',err);
-    pipBtn.classList.remove('active');
   }
 }
 
