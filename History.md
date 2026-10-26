@@ -2,6 +2,15 @@
 
 이 문서는 버전별 주요 변경 사항을 기록합니다. `src/App.jsx`의 `APP_VERSION`과 함께 갱신합니다.
 
+## v2.1.0
+- 📌 팝업↔PiP 전환 구조 전면 재설계
+  - 메인 앱(App.jsx)이 모든 창 열기 담당 (팝업, PiP 모두)
+  - 팝업/PiP 내 📌 클릭 → `postMessage({type}, origin, {includeUserActivation:true})`로 메인 앱에 요청 후 `window.close()`
+  - `IS_PIP = !('documentPictureInPicture' in window)`로 창 모드 감지 (PiP 창에는 해당 API 없음)
+  - PiP opener가 메인 앱 → 팝업 완전히 닫아도 PiP 유지
+  - PiP 내에서 mini.html을 fetch해서 그대로 주입 → 코드 중복 없음
+  - 팝업 숨기기 문제, 창 이동 시 팝업 노출 문제 근본 해결
+
 ## v2.0.2
 - 📌 PiP 전환 후 창 이동 시 팝업이 뒤에서 노출되는 문제 수정
   - PiP 열기 직전 팝업을 1×1 크기로 줄이고 화면 우하단 모서리로 이동 + opacity:0

@@ -83,70 +83,24 @@ let _lastState=null;
 try{const s=localStorage.getItem('pomodoro-mini-state');if(s){_lastState=JSON.parse(s);render(_lastState);}}catch(e){}
 bc.onmessage=e=>{if(e.data&&!e.data.type){_lastState=e.data;render(e.data);}};
 
-// ── 항상 위에 고정 (팝업에서 직접 PiP 열기) ──
+// PiP 창 내부에서는 documentPictureInPicture API가 없으므로 모드 구분
+const IS_PIP=!('documentPictureInPicture' in window);
 const pipBtn=document.getElementById('pip-btn');
-let _pipWin=null;
 
-async function togglePiP(){
-  if(!('documentPictureInPicture' in window)){
+if(IS_PIP){
+  pipBtn.classList.add('active');
+  pipBtn.title='팝업으로 전환';
+}
+
+pipBtn.addEventListener('click',()=>{
+  if(!IS_PIP&&!('documentPictureInPicture' in window)){
     alert('항상 위에 기능은 Chrome 116 이상에서 지원됩니다.\n\n대신 Windows 키보드 단축키:\n• PowerToys "Always on Top": Win+Ctrl+T');
     return;
   }
-  // PiP 중 → 닫기 (pagehide에서 팝업 복원)
-  if(_pipWin&&!_pipWin.closed){_pipWin.close();return;}
-
-  // 현재 팝업 위치/크기/타이틀바 높이 저장
-  const savedX=window.screenX,savedY=window.screenY;
-  const savedW=window.outerWidth,savedH=window.outerHeight;
-  const titleBarH=Math.max(0,window.outerHeight-window.innerHeight);
-
-  // PiP 열기 전 팝업을 1×1로 줄여 화면 밖 모서리로 이동 (PiP 이동 시 팝업 노출 방지)
-  window.resizeTo(1,1);
-  window.moveTo(window.screen.availWidth-1,window.screen.availHeight-1);
-  document.documentElement.style.opacity='0';
-
-  try{
-    const pip=await documentPictureInPicture.requestWindow({width:300,height:200,disallowReturnToOpener:false});
-    _pipWin=pip;
-    try{pip.moveTo(savedX,savedY+titleBarH);}catch(e){}
-    pipBtn.classList.add('active');
-    pipBtn.title='항상 위에 해제';
-
-    // PiP 창에 CSS/HTML 주입
-    const style=pip.document.createElement('style');
-    style.textContent=document.querySelector('style').textContent+
-      '\n#pip-btn{background:#534AB7!important;color:#fff!important;border-color:#534AB7!important;}';
-    pip.document.head.appendChild(style);
-    pip.document.body.innerHTML=
-      '<div id="bar"><div id="fill"></div></div>'+
-      '<div id="app"><div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div></div>'+
-      '<button id="pip-btn" title="항상 위에 해제">📌</button>';
-
-    if(_lastState)renderIn(pip.document,_lastState);
-
-    const pipBC=new pip.BroadcastChannel('pomodoro-mini');
-    pipBC.onmessage=e=>{if(e.data&&!e.data.type){_lastState=e.data;renderIn(pip.document,e.data);}};
-
-    pip.document.getElementById('pip-btn').addEventListener('click',()=>{_pipWin.close();});
-
-    pip.addEventListener('pagehide',()=>{
-      _pipWin=null;
-      document.documentElement.style.opacity='';
-      window.resizeTo(savedW,savedH);
-      window.moveTo(savedX,savedY);
-      pipBtn.classList.remove('active');
-      pipBtn.title='항상 위에 고정';
-      window.focus();
-    });
-  }catch(err){
-    document.documentElement.style.opacity='';
-    window.resizeTo(savedW,savedH);
-    window.moveTo(savedX,savedY);
-    console.error('PiP 오류:',err);
-  }
-}
-
-pipBtn.addEventListener('click',togglePiP);
+  const type=IS_PIP?'popup-request':'pip-request';
+  try{window.opener?.postMessage({type},location.origin,{includeUserActivation:true});}catch(e){}
+  window.close();
+});
 </script>
 </body>
 </html>

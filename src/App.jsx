@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="2.0.2";
+const APP_VERSION="2.1.0";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -301,6 +301,8 @@ export default function App() {
   const paRef=useRef(null);
   const bcRef=useRef(null);
   const miniWinRef=useRef(null);
+  const pipWinRef=useRef(null);
+  const _openMiniRef=useRef(null);
   const bgmFocusInputRef=useRef(null);
   const bgmBreakInputRef=useRef(null);
   const alarmRef=useRef(alarmCfg);
@@ -515,6 +517,32 @@ export default function App() {
       },{once:true});
     }
   }
+  _openMiniRef.current=openMiniWindow;
+
+  // 미니창 메시지 처리: pip-request → PiP 열기, popup-request → 팝업 열기
+  useEffect(()=>{
+    async function onMsg(e){
+      if(e.data?.type==='pip-request'){
+        if(!('documentPictureInPicture' in window))return;
+        if(pipWinRef.current&&!pipWinRef.current.closed)return;
+        const sw=window.screen.availWidth,sh=window.screen.availHeight;
+        const gap=16,W=300,H=200;
+        try{
+          const pip=await documentPictureInPicture.requestWindow({width:W,height:H,disallowReturnToOpener:false});
+          pipWinRef.current=pip;
+          try{pip.moveTo(sw-W-gap,sh-H-gap);}catch(_){}
+          const res=await fetch('/mini.html');
+          const html=await res.text();
+          pip.document.open();pip.document.write(html);pip.document.close();
+          pip.addEventListener('pagehide',()=>{pipWinRef.current=null;});
+        }catch(err){console.error('PiP 오류:',err);}
+      } else if(e.data?.type==='popup-request'){
+        _openMiniRef.current?.();
+      }
+    }
+    window.addEventListener('message',onMsg);
+    return()=>window.removeEventListener('message',onMsg);
+  },[]);
 
   // 배경음악(BGM) 재생 — 집중/휴식 단계에 맞춰 곡 전환
   const bgmRef=useRef(null);
