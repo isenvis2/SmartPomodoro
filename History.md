@@ -2,6 +2,12 @@
 
 이 문서는 버전별 주요 변경 사항을 기록합니다. `src/App.jsx`의 `APP_VERSION`과 함께 갱신합니다.
 
+## v1.9.9
+- PiP→팝업 전환 버그 근본 수정
+  - PiP 창에서 직접 팝업을 열던 방식 폐기
+  - 📌 클릭 시 BroadcastChannel로 popup-request 전송 → 메인 앱이 PiP 닫고 팝업 열기
+  - 모든 전환(pip-request/popup-request)을 메인 앱에서 일관되게 처리
+
 ## v1.9.8
 - PiP → 팝업 전환 시 창 사라짐 버그 수정
   - pip.close() 직후 openAsPopup() 호출 시 브라우저가 제스처를 소모된 것으로 처리하는 문제

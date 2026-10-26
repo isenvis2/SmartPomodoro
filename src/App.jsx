@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.9.8";
+const APP_VERSION="1.9.9";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -496,6 +496,9 @@ export default function App() {
       if(e.data?.type==='pip-request'){
         if(miniWinRef.current&&!miniWinRef.current.closed){miniWinRef.current.close();miniWinRef.current=null;}
         openAsPiP();
+      } else if(e.data?.type==='popup-request'){
+        if(pipWinRef.current&&!pipWinRef.current.closed){pipWinRef.current.close();pipWinRef.current=null;}
+        openAsPopup();
       }
     };
     return()=>{bc.close();};
@@ -553,10 +556,13 @@ export default function App() {
       pip.document.body.innerHTML='<div id="bar"><div id="fill"></div></div><div id="app"><div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div></div><button id="pip-btn" title="항상 위에 해제">📌</button>';
       try{const s=localStorage.getItem('pomodoro-mini-state');if(s)renderMiniIn(pip.document,JSON.parse(s));}catch(e){}
       const pipBC=new pip.BroadcastChannel('pomodoro-mini');
-      pipBC.onmessage=e=>renderMiniIn(pip.document,e.data);
-      let _reopenPopup=false;
-      pip.document.getElementById('pip-btn').addEventListener('click',()=>{_reopenPopup=true;pip.close();});
-      pip.addEventListener('pagehide',()=>{pipWinRef.current=null;if(_reopenPopup)openAsPopup();});
+      // type 없는 메시지만 렌더 (type 있는 건 App.jsx onmessage가 처리)
+      pipBC.onmessage=e=>{if(e.data&&!e.data.type)renderMiniIn(pip.document,e.data);};
+      // 📌 클릭 → 메인 앱에 팝업 요청 (메인 앱이 PiP 닫고 팝업 열기)
+      pip.document.getElementById('pip-btn').addEventListener('click',()=>{
+        bcRef.current?.postMessage({type:'popup-request'});
+      });
+      pip.addEventListener('pagehide',()=>{pipWinRef.current=null;});
     }catch(err){console.error('PiP 오류:',err);}
     finally{pipOpeningRef.current=false;}
   }
