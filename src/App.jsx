@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.9.6";
+const APP_VERSION="1.9.7";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -303,6 +303,7 @@ export default function App() {
   const miniWinRef=useRef(null);
   const pipWinRef=useRef(null);
   const pipOpeningRef=useRef(false);
+  const titleBarHRef=useRef(30);
   const bgmFocusInputRef=useRef(null);
   const bgmBreakInputRef=useRef(null);
   const alarmRef=useRef(alarmCfg);
@@ -531,10 +532,9 @@ export default function App() {
   }
 
   function miniPos(){
-    const W=300,H=200,gap=16,titleBarH=30;
+    const W=300,H=200,gap=16;
     const sw=window.screen.availWidth,sh=window.screen.availHeight;
-    // PiP: 타이틀바 없음 → top = sh-H-gap
-    // 팝업: 타이틀바(~30px) 있음 → 내용 상단을 PiP와 맞추려면 창 top을 titleBarH만큼 올림
+    const titleBarH=titleBarHRef.current;
     return{left:sw-W-gap,pipTop:sh-H-gap,popupTop:sh-H-titleBarH-gap,W,H};
   }
 
@@ -563,8 +563,22 @@ export default function App() {
   function openAsPopup(){
     if(miniWinRef.current&&!miniWinRef.current.closed){miniWinRef.current.focus();return;}
     const{left,popupTop,W,H}=miniPos();
-    miniWinRef.current=window.open('/mini.html','pomodoro-mini',
+    const win=window.open('/mini.html','pomodoro-mini',
       `width=${W},height=${H},left=${left},top=${popupTop},menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=no`);
+    miniWinRef.current=win;
+    // 실제 타이틀바 높이 측정 후 위치 재조정
+    if(win){
+      win.addEventListener('load',()=>{
+        if(win.closed) return;
+        const measured=win.outerHeight-win.innerHeight;
+        if(measured>0){
+          titleBarHRef.current=measured;
+          const{left:l,W:w,H:h}=miniPos();
+          const sh=window.screen.availHeight,gap=16;
+          win.moveTo(l,sh-h-measured-gap);
+        }
+      },{once:true});
+    }
   }
 
   async function openMiniWindow(){
