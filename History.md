@@ -2,6 +2,11 @@
 
 이 문서는 버전별 주요 변경 사항을 기록합니다. `src/App.jsx`의 `APP_VERSION`과 함께 갱신합니다.
 
+## v1.9.8
+- PiP → 팝업 전환 시 창 사라짐 버그 수정
+  - pip.close() 직후 openAsPopup() 호출 시 브라우저가 제스처를 소모된 것으로 처리하는 문제
+  - pagehide 이벤트(PiP 완전히 닫힌 후)에서 팝업을 열도록 변경
+
 ## v1.9.7
 - 타이틀바 높이를 고정값 대신 동적으로 측정
   - 팝업 열린 후 load 이벤트에서 outerHeight - innerHeight로 실제 높이 측정

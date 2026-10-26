@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.9.7";
+const APP_VERSION="1.9.8";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -554,8 +554,9 @@ export default function App() {
       try{const s=localStorage.getItem('pomodoro-mini-state');if(s)renderMiniIn(pip.document,JSON.parse(s));}catch(e){}
       const pipBC=new pip.BroadcastChannel('pomodoro-mini');
       pipBC.onmessage=e=>renderMiniIn(pip.document,e.data);
-      pip.document.getElementById('pip-btn').addEventListener('click',()=>{pip.close();openAsPopup();});
-      pip.addEventListener('pagehide',()=>{pipWinRef.current=null;});
+      let _reopenPopup=false;
+      pip.document.getElementById('pip-btn').addEventListener('click',()=>{_reopenPopup=true;pip.close();});
+      pip.addEventListener('pagehide',()=>{pipWinRef.current=null;if(_reopenPopup)openAsPopup();});
     }catch(err){console.error('PiP 오류:',err);}
     finally{pipOpeningRef.current=false;}
   }
