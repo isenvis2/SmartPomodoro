@@ -33,8 +33,6 @@
       transition:background .15s,color .15s;z-index:10;
     }
     #pip-btn:hover{background:#2e2c2a;color:#aaa;}
-    #pip-btn.active{background:#534AB7;color:#fff;border-color:#534AB7;}
-    #pip-btn[hidden]{display:none!important;}
   </style>
 </head>
 <body>
@@ -103,54 +101,16 @@ let _lastState=null;
 try{const s=localStorage.getItem('pomodoro-mini-state');if(s){_lastState=JSON.parse(s);render(_lastState);}}catch(e){}
 bc.onmessage=e=>{_lastState=e.data;render(e.data);};
 
-// ── 항상 위에 고정 (Document Picture-in-Picture) ──
+// ── 항상 위에 고정: 메인 앱에 PiP 요청 ──
 const pipBtn=document.getElementById('pip-btn');
-let _pipWin=null;
-
-async function openPiP(){
+pipBtn.addEventListener('click',()=>{
   if(!('documentPictureInPicture' in window)){
     alert('항상 위에 기능은 Chrome 116 이상에서 지원됩니다.\n\n대신 Windows 키보드 단축키:\n• PowerToys "Always on Top": Win+Ctrl+T\n• 작업 표시줄 아이콘 우클릭 → 항상 위에');
     return;
   }
-  // 이미 열려 있으면 닫기
-  if(_pipWin&&!_pipWin.closed){
-    _pipWin.close();
-    _pipWin=null;
-    pipBtn.classList.remove('active');
-    pipBtn.title='항상 위에 고정';
-    return;
-  }
-  try{
-    const pip=await documentPictureInPicture.requestWindow({width:300,height:200,disallowReturnToOpener:false});
-    _pipWin=pip;
-    pipBtn.classList.add('active');
-    pipBtn.title='항상 위에 해제';
-
-    // CSS 주입
-    const style=pip.document.createElement('style');
-    style.textContent=document.querySelector('style').textContent+'\n#pip-btn{display:none!important}';
-    pip.document.head.appendChild(style);
-
-    // HTML 구조 복제
-    pip.document.body.innerHTML=
-      '<div id="bar"><div id="fill"></div></div>'+
-      '<div id="app"><div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div></div>';
-
-    // 현재 상태 즉시 렌더
-    if(_lastState)renderIn(pip.document,_lastState);
-
-    // BroadcastChannel로 PiP 창도 업데이트
-    const pipBC=new pip.BroadcastChannel('pomodoro-mini');
-    pipBC.onmessage=e=>{_lastState=e.data;renderIn(pip.document,e.data);};
-
-    // PiP 창이 열렸으면 팝업 자신을 닫아 창이 하나만 남도록 함
-    window.close();
-  }catch(err){
-    console.error('PiP 오류:',err);
-  }
-}
-
-pipBtn.addEventListener('click',openPiP);
+  // 메인 앱에 PiP 요청 → 메인 앱이 팝업 닫고 PiP 창 열기
+  bc.postMessage({type:'pip-request'});
+});
 </script>
 </body>
 </html>

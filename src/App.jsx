@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="1.9.3";
+const APP_VERSION="1.9.4";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -301,6 +301,7 @@ export default function App() {
   const paRef=useRef(null);
   const bcRef=useRef(null);
   const miniWinRef=useRef(null);
+  const pipWinRef=useRef(null);
   const bgmFocusInputRef=useRef(null);
   const bgmBreakInputRef=useRef(null);
   const alarmRef=useRef(alarmCfg);
@@ -487,8 +488,15 @@ export default function App() {
 
   // 미니 팝업 브로드캐스트 채널 초기화
   useEffect(()=>{
-    bcRef.current=new BroadcastChannel('pomodoro-mini');
-    return()=>{bcRef.current?.close();};
+    const bc=new BroadcastChannel('pomodoro-mini');
+    bcRef.current=bc;
+    bc.onmessage=(e)=>{
+      if(e.data?.type==='pip-request'){
+        if(miniWinRef.current&&!miniWinRef.current.closed){miniWinRef.current.close();miniWinRef.current=null;}
+        openAsPiP();
+      }
+    };
+    return()=>{bc.close();};
   },[]);
 
   // 타이머 상태를 미니 팝업으로 전송
@@ -499,10 +507,56 @@ export default function App() {
     try{localStorage.setItem('pomodoro-mini-state',JSON.stringify(state));}catch(e){}
   },[tLeft,running,session?.phase,session?.tid,session?.done,tColor]);
 
-  function openMiniWindow(){
+  function renderMiniIn(doc,st){
+    const LABEL={focus:'집중',short:'짧은 휴식',long:'긴 휴식'};
+    const MSGS={
+      focus:[[0,'집중 시작! 🎯'],[0.15,'잘 하고 있어요! 💪'],[0.40,'훌륭해요, 계속! 🔥'],[0.60,'조금만 더 힘내요! 😤'],[0.80,'거의 다 왔어요! 🏁'],[0.92,'마지막 스퍼트! 💨']],
+      short:[[0,'잠깐 쉬어가요 ☕'],[0.5,'곧 다시 시작해요! 🌟']],
+      long:[[0,'충분히 쉬어가요 😌'],[0.5,'재충전 중... 에너지 UP! ⚡']],
+    };
+    function getMsg(phase,pct,r){if(!r)return'일시정지 중... ⏸';const list=MSGS[phase]||MSGS.short;let m=list[0][1];for(const[th,txt]of list){if(pct>=th)m=txt;}return m;}
+    function fmt(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
+    const app=doc.getElementById('app');const fill=doc.getElementById('fill');
+    if(!st||!st.phase){app.innerHTML='<div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div>';fill.style.width='0%';return;}
+    const{running,tLeft,phase,taskName,done,total,phaseTotal,tColor}=st;
+    const c=tColor||'#534AB7';
+    doc.documentElement.style.setProperty('--c',c);
+    const pct=phaseTotal>0?Math.max(0,1-tLeft/phaseTotal):0;
+    fill.style.width=(pct*100).toFixed(1)+'%';fill.style.background=c;
+    const msg=getMsg(phase,pct,running);
+    const maxD=Math.min(total,10);
+    const dotsHtml=Array.from({length:maxD},(_,i)=>{const cl=i<done?'dot done':i===done&&phase==='focus'?'dot cur':'dot';return`<div class="${cl}"></div>`;}).join('');
+    app.innerHTML=`<div id="task">${taskName||''}</div><div id="time" style="color:${c}">${fmt(tLeft)}</div><div id="phase" style="color:${c}">${LABEL[phase]||phase} &nbsp;${done}/${total}</div><div id="msg">${msg}</div><div id="dots">${dotsHtml}</div>`;
+  }
+
+  async function openAsPiP(){
+    if(!('documentPictureInPicture' in window)) return;
+    if(pipWinRef.current&&!pipWinRef.current.closed){pipWinRef.current.focus();return;}
+    try{
+      const pip=await documentPictureInPicture.requestWindow({width:300,height:200,disallowReturnToOpener:false});
+      pipWinRef.current=pip;
+      const css=`*{box-sizing:border-box;margin:0;padding:0}html,body{width:300px;height:200px;overflow:hidden;background:#1a1918;color:#fff;font-family:system-ui,-apple-system,sans-serif;user-select:none;}#bar{position:fixed;top:0;left:0;right:0;height:3px;background:#2a2927}#fill{height:100%;width:0%;transition:width .9s linear}#app{display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;padding:10px 16px 8px;gap:3px}#task{font-size:11px;color:#777;max-width:240px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-height:14px}#time{font-size:52px;font-weight:700;letter-spacing:-2px;line-height:1}#phase{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;opacity:.55;margin-top:1px}#msg{font-size:12px;color:#bbb;margin-top:6px;min-height:18px;text-align:center}#dots{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;justify-content:center;max-width:260px;min-height:10px}.dot{width:8px;height:8px;border-radius:50%;background:#2e2c2a;flex-shrink:0}.done{background:var(--c,#534AB7)}.cur{background:transparent;border:2px solid var(--c,#534AB7)}#idle{text-align:center;color:#444;line-height:1.7}#idle span{font-size:11px;color:#333}#pip-btn{position:fixed;top:6px;right:6px;width:22px;height:22px;border-radius:4px;background:#534AB7;border:1px solid #534AB7;color:#fff;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;}#pip-btn:hover{background:#6358d4;}`;
+      const style=pip.document.createElement('style');style.textContent=css;pip.document.head.appendChild(style);
+      pip.document.body.innerHTML='<div id="bar"><div id="fill"></div></div><div id="app"><div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div></div><button id="pip-btn" title="항상 위에 해제">📌</button>';
+      try{const s=localStorage.getItem('pomodoro-mini-state');if(s)renderMiniIn(pip.document,JSON.parse(s));}catch(e){}
+      const pipBC=new pip.BroadcastChannel('pomodoro-mini');
+      pipBC.onmessage=e=>renderMiniIn(pip.document,e.data);
+      pip.document.getElementById('pip-btn').addEventListener('click',()=>{pip.close();openAsPopup();});
+      pip.addEventListener('pagehide',()=>{pipWinRef.current=null;});
+    }catch(err){console.error('PiP 오류:',err);}
+  }
+
+  function openAsPopup(){
     if(miniWinRef.current&&!miniWinRef.current.closed){miniWinRef.current.focus();return;}
     miniWinRef.current=window.open('/mini.html','pomodoro-mini',
       'width=300,height=200,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=no');
+  }
+
+  async function openMiniWindow(){
+    if(pipWinRef.current&&!pipWinRef.current.closed){pipWinRef.current.focus();return;}
+    if(miniWinRef.current&&!miniWinRef.current.closed){miniWinRef.current.focus();return;}
+    if('documentPictureInPicture' in window){await openAsPiP();}
+    else{openAsPopup();}
   }
 
   // 배경음악(BGM) 재생 — 집중/휴식 단계에 맞춰 곡 전환
