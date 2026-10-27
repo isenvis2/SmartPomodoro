@@ -507,7 +507,7 @@ export default function App() {
     if(pipWinRef.current&&!pipWinRef.current.closed)return;
     if(!('documentPictureInPicture' in window)){openMiniWindow();return;}
     const sw=window.screen.availWidth,sh=window.screen.availHeight;
-    const gap=16,W=300,H=200;
+    const gap=16,W=220,H=150;
     try{
       const pip=await documentPictureInPicture.requestWindow({width:W,height:H,disallowReturnToOpener:false});
       pipWinRef.current=pip;
@@ -524,7 +524,7 @@ export default function App() {
 
   function openMiniWindow(){
     if(miniWinRef.current&&!miniWinRef.current.closed){miniWinRef.current.focus();return;}
-    const W=300,H=200,gap=16;
+    const W=220,H=150,gap=16;
     const sw=window.screen.availWidth,sh=window.screen.availHeight;
     const win=window.open('/mini.html','pomodoro-mini',
       `width=${W},height=${H},left=${sw-W-gap},top=-2000,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=no`);

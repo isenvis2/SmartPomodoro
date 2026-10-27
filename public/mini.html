@@ -6,32 +6,29 @@
   <title>⏱ 포모도로</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    html,body{width:300px;height:200px;overflow:hidden;background:#1a1918;color:#fff;
+    html,body{width:220px;height:150px;overflow:hidden;background:#1a1918;color:#fff;
       font-family:system-ui,-apple-system,sans-serif;user-select:none;}
     #bar{position:fixed;top:0;left:0;right:0;height:3px;background:#2a2927}
     #fill{height:100%;width:0%;transition:width .9s linear}
     #app{display:flex;flex-direction:column;align-items:center;justify-content:center;
-      height:200px;padding:10px 16px 8px;gap:3px}
-    #task{font-size:11px;color:#777;max-width:240px;overflow:hidden;white-space:nowrap;
-      text-overflow:ellipsis;min-height:14px}
-    #time{font-size:52px;font-weight:700;letter-spacing:-2px;line-height:1}
-    #phase{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;opacity:.55;margin-top:1px}
-    #msg{font-size:12px;color:#bbb;margin-top:6px;min-height:18px;text-align:center}
-    #dots{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;justify-content:center;max-width:260px;min-height:10px}
-    .dot{width:8px;height:8px;border-radius:50%;background:#2e2c2a;flex-shrink:0}
+      height:150px;padding:8px 12px 6px;gap:2px}
+    #task{font-size:10px;color:#777;max-width:180px;overflow:hidden;white-space:nowrap;
+      text-overflow:ellipsis;min-height:13px}
+    #time{font-size:26px;font-weight:700;letter-spacing:-1px;line-height:1}
+    #phase{font-size:8px;letter-spacing:1.5px;text-transform:uppercase;opacity:.55;margin-top:1px}
+    #msg{font-size:11px;color:#bbb;margin-top:3px;min-height:16px;text-align:center}
+    #dots{display:flex;gap:4px;margin-top:3px;flex-wrap:wrap;justify-content:center;max-width:190px;min-height:9px}
+    .dot{width:7px;height:7px;border-radius:50%;background:#2e2c2a;flex-shrink:0}
     .done{background:var(--c,#534AB7)}
     .cur{background:transparent;border:2px solid var(--c,#534AB7)}
     #idle{text-align:center;color:#444;line-height:1.7}
-    #idle span{font-size:11px;color:#333}
-    #close-btn,#play-btn{
-      position:fixed;top:6px;width:22px;height:22px;border-radius:4px;
-      background:#2a2927;border:1px solid #555;color:#ccc;cursor:pointer;
-      display:flex;align-items:center;justify-content:center;
+    #idle span{font-size:10px;color:#333}
+    #play-btn{
+      position:fixed;top:6px;right:6px;width:22px;height:22px;border-radius:4px;
+      background:#2a2927;border:1px solid #555;color:#ccc;font-size:13px;cursor:pointer;
+      display:none;align-items:center;justify-content:center;
       transition:background .15s,color .15s,border-color .15s;z-index:10;
     }
-    #close-btn{right:6px;font-size:14px;}
-    #play-btn{right:34px;font-size:13px;}
-    #close-btn:hover{background:#4a1f1f;color:#ff6b6b;border-color:#ff6b6b;}
     #play-btn:hover{background:#3a3835;color:#fff;border-color:#888;}
     #play-btn:disabled{opacity:.3;cursor:default;}
   </style>
@@ -39,8 +36,7 @@
 <body>
   <div id="bar"><div id="fill"></div></div>
   <div id="app"><div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div></div>
-  <button id="play-btn" title="일시정지/재생" style="display:none">▶</button>
-  <button id="close-btn" title="닫기">✕</button>
+  <button id="play-btn" title="일시정지/재생">▶</button>
 <script>
 const LABEL={focus:'집중',short:'짧은 휴식',long:'긴 휴식'};
 const MSGS={
@@ -64,6 +60,7 @@ function render(st){
   if(!st||!st.phase){
     app.innerHTML='<div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div>';
     fill.style.width='0%';
+    document.getElementById('play-btn').style.display='none';
     return;
   }
   const{running,tLeft,phase,taskName,done,total,phaseTotal,tColor}=st;
@@ -80,7 +77,7 @@ function render(st){
   }).join('');
   app.innerHTML=`<div id="task">${taskName||''}</div><div id="time" style="color:${c}">${fmt(tLeft)}</div><div id="phase" style="color:${c}">${LABEL[phase]||phase} &nbsp;${done}/${total}</div><div id="msg">${msg}</div><div id="dots">${dotsHtml}</div>`;
   const pb=document.getElementById('play-btn');
-  if(pb){pb.style.display='flex';pb.textContent=running?'⏸':'▶';}
+  pb.style.display='flex';pb.textContent=running?'⏸':'▶';
 }
 
 const bc=new BroadcastChannel('pomodoro-mini');
@@ -88,7 +85,6 @@ try{const s=localStorage.getItem('pomodoro-mini-state');if(s){render(JSON.parse(
 bc.onmessage=e=>{if(e.data&&!e.data.type){render(e.data);}};
 
 document.getElementById('play-btn').addEventListener('click',()=>bc.postMessage({type:'toggle-run'}));
-document.getElementById('close-btn').addEventListener('click',()=>window.close());
 </script>
 </body>
 </html>
