@@ -15,7 +15,7 @@
     #task{font-size:11px;color:#e8e6e3;font-weight:600;max-width:180px;overflow:hidden;white-space:nowrap;
       text-overflow:ellipsis;min-height:13px;letter-spacing:.2px}
     #time{font-size:26px;font-weight:800;letter-spacing:-1px;line-height:1;
-      text-shadow:0 0 18px var(--c,#534AB7),0 0 6px var(--c,#534AB7)66;}
+      text-shadow:0 0 18px #FFD70088,0 0 6px #FFD70044;}
     #phase{font-size:8px;letter-spacing:1.5px;text-transform:uppercase;opacity:.8;margin-top:1px}
     #msg{font-size:11px;color:#ccc;margin-top:3px;min-height:16px;text-align:center}
     #dots{display:flex;gap:4px;margin-top:3px;flex-wrap:wrap;justify-content:center;max-width:190px;min-height:9px}
@@ -76,7 +76,7 @@ function render(st){
     const cl=i<done?'dot done':i===done&&phase==='focus'?'dot cur':'dot';
     return`<div class="${cl}"></div>`;
   }).join('');
-  app.innerHTML=`<div id="task">${taskName||''}</div><div id="time" style="color:${c}">${fmt(tLeft)}</div><div id="phase" style="color:${c}">${LABEL[phase]||phase} &nbsp;${done}/${total}</div><div id="msg">${msg}</div><div id="dots">${dotsHtml}</div>`;
+  app.innerHTML=`<div id="task">${taskName||''}</div><div id="time" style="color:#FFD700;text-shadow:0 0 18px #FFD70088,0 0 6px #FFD70044">${fmt(tLeft)}</div><div id="phase" style="color:${c}">${LABEL[phase]||phase} &nbsp;${done}/${total}</div><div id="msg">${msg}</div><div id="dots">${dotsHtml}</div>`;
   const pb=document.getElementById('play-btn');
   pb.style.display='flex';pb.textContent=running?'⏸':'▶';
 }
