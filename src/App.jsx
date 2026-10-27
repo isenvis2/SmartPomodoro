@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="2.2.0";
+const APP_VERSION="2.3.0";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -302,6 +302,7 @@ export default function App() {
   const bcRef=useRef(null);
   const miniWinRef=useRef(null);
   const pipWinRef=useRef(null);
+  const toggleRunRef=useRef(null);
   const bgmFocusInputRef=useRef(null);
   const bgmBreakInputRef=useRef(null);
   const alarmRef=useRef(alarmCfg);
@@ -490,6 +491,7 @@ export default function App() {
   useEffect(()=>{
     const bc=new BroadcastChannel('pomodoro-mini');
     bcRef.current=bc;
+    bc.onmessage=e=>{if(e.data?.type==='toggle-run')toggleRunRef.current?.();};
     return()=>{bc.close();};
   },[]);
 
@@ -639,6 +641,7 @@ export default function App() {
     setGroups(r);setTasks(t=>t.filter(x=>x.gid!==id));setSelGid(r[0]?.id||"");
   }
   function toggleRun(){if(!session)return;setRunning(r=>!r);}
+  toggleRunRef.current=toggleRun;
   function resetTmr(){
     askConfirm("타이머를 리셋할까요? 진행 중인 기록은 복구할 수 없어요.",()=>{
       clearInterval(iRef.current);clearInterval(paRef.current);setRunning(false);

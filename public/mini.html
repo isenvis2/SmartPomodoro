@@ -23,18 +23,23 @@
     .cur{background:transparent;border:2px solid var(--c,#534AB7)}
     #idle{text-align:center;color:#444;line-height:1.7}
     #idle span{font-size:11px;color:#333}
-    #close-btn{
-      position:fixed;top:6px;right:6px;width:22px;height:22px;border-radius:4px;
-      background:transparent;border:1px solid #3a3937;color:#555;font-size:14px;cursor:pointer;
+    #close-btn,#play-btn{
+      position:fixed;top:6px;width:22px;height:22px;border-radius:4px;
+      background:transparent;border:1px solid #3a3937;color:#555;cursor:pointer;
       display:flex;align-items:center;justify-content:center;
       transition:background .15s,color .15s;z-index:10;
     }
+    #close-btn{right:6px;font-size:14px;}
+    #play-btn{right:34px;font-size:13px;}
     #close-btn:hover{background:#3a1a1a;color:#E24B4A;border-color:#E24B4A50;}
+    #play-btn:hover{background:#2e2c2a;color:#aaa;}
+    #play-btn:disabled{opacity:.3;cursor:default;}
   </style>
 </head>
 <body>
   <div id="bar"><div id="fill"></div></div>
   <div id="app"><div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div></div>
+  <button id="play-btn" title="일시정지/재생" style="display:none">▶</button>
   <button id="close-btn" title="닫기">✕</button>
 <script>
 const LABEL={focus:'집중',short:'짧은 휴식',long:'긴 휴식'};
@@ -74,12 +79,15 @@ function render(st){
     return`<div class="${cl}"></div>`;
   }).join('');
   app.innerHTML=`<div id="task">${taskName||''}</div><div id="time" style="color:${c}">${fmt(tLeft)}</div><div id="phase" style="color:${c}">${LABEL[phase]||phase} &nbsp;${done}/${total}</div><div id="msg">${msg}</div><div id="dots">${dotsHtml}</div>`;
+  const pb=document.getElementById('play-btn');
+  if(pb){pb.style.display='flex';pb.textContent=running?'⏸':'▶';}
 }
 
 const bc=new BroadcastChannel('pomodoro-mini');
 try{const s=localStorage.getItem('pomodoro-mini-state');if(s){render(JSON.parse(s));}}catch(e){}
 bc.onmessage=e=>{if(e.data&&!e.data.type){render(e.data);}};
 
+document.getElementById('play-btn').addEventListener('click',()=>bc.postMessage({type:'toggle-run'}));
 document.getElementById('close-btn').addEventListener('click',()=>window.close());
 </script>
 </body>
