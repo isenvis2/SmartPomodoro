@@ -98,7 +98,10 @@ pipBtn.addEventListener('click',()=>{
     return;
   }
   const type=IS_PIP?'popup-request':'pip-request';
-  try{window.opener?.postMessage({type},{targetOrigin:location.origin,includeUserActivation:true});}catch(e){}
+  try{
+    window.opener?.focus(); // 최소화된 경우 복원 (requestWindow는 창이 visible해야 작동)
+    window.opener?.postMessage({type},{targetOrigin:location.origin,includeUserActivation:true});
+  }catch(e){}
   window.close();
 });
 </script>

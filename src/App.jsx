@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="2.1.0";
+const APP_VERSION="2.1.2";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -533,7 +533,12 @@ export default function App() {
           try{pip.moveTo(sw-W-gap,sh-H-gap);}catch(_){}
           const res=await fetch('/mini.html');
           const html=await res.text();
-          pip.document.open();pip.document.write(html);pip.document.close();
+          // PiP 창에서 IS_PIP를 true로 강제 설정 (PiP 창에도 documentPictureInPicture가 있어 감지 불가)
+          const pipHtml=html.replace(
+            "const IS_PIP=!('documentPictureInPicture' in window);",
+            "const IS_PIP=true;"
+          );
+          pip.document.open();pip.document.write(pipHtml);pip.document.close();
           pip.addEventListener('pagehide',()=>{pipWinRef.current=null;});
         }catch(err){console.error('PiP 오류:',err);}
       } else if(e.data?.type==='popup-request'){
