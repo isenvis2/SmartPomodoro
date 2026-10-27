@@ -117,9 +117,10 @@ pipBtn.addEventListener('click',async()=>{
     try{pip.moveTo(savedX,savedY+titleBarH);}catch(e){}
 
     // 팝업 숨기기 (닫지 않음: PiP의 opener 유지)
+    // X축 방향으로 화면 밖 이동 — Windows는 좌우 이동을 클램프하지 않음
     document.documentElement.style.visibility='hidden';
     window.resizeTo(1,1);
-    window.moveTo(window.screen.availWidth-2,window.screen.availHeight-2);
+    window.moveTo(window.screen.availWidth+200, 0);
 
     // PiP에 mini.html 주입 (IS_PIP=true 강제)
     const res=await fetch('/mini.html');
