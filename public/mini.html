@@ -23,20 +23,19 @@
     .cur{background:transparent;border:2px solid var(--c,#534AB7)}
     #idle{text-align:center;color:#444;line-height:1.7}
     #idle span{font-size:11px;color:#333}
-    #pip-btn{
+    #close-btn{
       position:fixed;top:6px;right:6px;width:22px;height:22px;border-radius:4px;
-      background:transparent;border:1px solid #3a3937;color:#555;font-size:13px;cursor:pointer;
+      background:transparent;border:1px solid #3a3937;color:#555;font-size:14px;cursor:pointer;
       display:flex;align-items:center;justify-content:center;
       transition:background .15s,color .15s;z-index:10;
     }
-    #pip-btn:hover{background:#2e2c2a;color:#aaa;}
-    #pip-btn.active{background:#534AB7;color:#fff;border-color:#534AB7;}
+    #close-btn:hover{background:#3a1a1a;color:#E24B4A;border-color:#E24B4A50;}
   </style>
 </head>
 <body>
   <div id="bar"><div id="fill"></div></div>
   <div id="app"><div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div></div>
-  <button id="pip-btn" title="항상 위에 고정">📌</button>
+  <button id="close-btn" title="닫기">✕</button>
 <script>
 const LABEL={focus:'집중',short:'짧은 휴식',long:'긴 휴식'};
 const MSGS={
@@ -54,9 +53,9 @@ function getMsg(phase,pct,running){
 }
 function fmt(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
 
-function renderIn(doc,st){
-  const app=doc.getElementById('app');
-  const fill=doc.getElementById('fill');
+function render(st){
+  const app=document.getElementById('app');
+  const fill=document.getElementById('fill');
   if(!st||!st.phase){
     app.innerHTML='<div id="idle">⏱ 대기 중<br><span>메인 창에서 작업을 시작하세요</span></div>';
     fill.style.width='0%';
@@ -64,7 +63,7 @@ function renderIn(doc,st){
   }
   const{running,tLeft,phase,taskName,done,total,phaseTotal,tColor}=st;
   const c=tColor||'#534AB7';
-  doc.documentElement.style.setProperty('--c',c);
+  document.documentElement.style.setProperty('--c',c);
   const pct=phaseTotal>0?Math.max(0,1-tLeft/phaseTotal):0;
   fill.style.width=(pct*100).toFixed(1)+'%';
   fill.style.background=c;
@@ -76,76 +75,12 @@ function renderIn(doc,st){
   }).join('');
   app.innerHTML=`<div id="task">${taskName||''}</div><div id="time" style="color:${c}">${fmt(tLeft)}</div><div id="phase" style="color:${c}">${LABEL[phase]||phase} &nbsp;${done}/${total}</div><div id="msg">${msg}</div><div id="dots">${dotsHtml}</div>`;
 }
-function render(st){renderIn(document,st);}
 
 const bc=new BroadcastChannel('pomodoro-mini');
-let _lastState=null;
-try{const s=localStorage.getItem('pomodoro-mini-state');if(s){_lastState=JSON.parse(s);render(_lastState);}}catch(e){}
-bc.onmessage=e=>{if(e.data&&!e.data.type){_lastState=e.data;render(e.data);}};
+try{const s=localStorage.getItem('pomodoro-mini-state');if(s){render(JSON.parse(s));}}catch(e){}
+bc.onmessage=e=>{if(e.data&&!e.data.type){render(e.data);}};
 
-// PiP 창 내부에서는 documentPictureInPicture API가 없음 → 모드 구분
-const IS_PIP=!('documentPictureInPicture' in window);
-const pipBtn=document.getElementById('pip-btn');
-let _pipWin=null;
-
-if(IS_PIP){
-  pipBtn.classList.add('active');
-  pipBtn.title='팝업으로 전환';
-}
-
-pipBtn.addEventListener('click',async()=>{
-  if(IS_PIP){
-    // PiP → 닫기만 하면 됨: pagehide에서 팝업이 자동 복원
-    window.close();
-    return;
-  }
-
-  // 팝업 → PiP (팝업이 직접 열기 — user gesture가 여기 있으므로 안정적)
-  if(!('documentPictureInPicture' in window)){
-    alert('항상 위에 기능은 Chrome 116 이상에서 지원됩니다.\n\n대신 Windows 키보드 단축키:\n• PowerToys "Always on Top": Win+Ctrl+T');
-    return;
-  }
-  if(_pipWin&&!_pipWin.closed){_pipWin.close();return;}
-
-  const savedX=window.screenX,savedY=window.screenY;
-  const savedW=window.outerWidth,savedH=window.outerHeight;
-  const titleBarH=Math.max(0,window.outerHeight-window.innerHeight);
-
-  try{
-    const pip=await documentPictureInPicture.requestWindow({width:300,height:200,disallowReturnToOpener:false});
-    _pipWin=pip;
-    try{pip.moveTo(savedX,savedY+titleBarH);}catch(e){}
-
-    // 팝업 숨기기 (닫지 않음: PiP의 opener 유지)
-    // X축 방향으로 화면 밖 이동 — Windows는 좌우 이동을 클램프하지 않음
-    document.documentElement.style.visibility='hidden';
-    window.resizeTo(1,1);
-    window.moveTo(window.screen.availWidth+200, 0);
-
-    // PiP에 mini.html 주입 (IS_PIP=true 강제)
-    const res=await fetch('/mini.html');
-    const html=await res.text();
-    const pipHtml=html.replace(
-      "const IS_PIP=!('documentPictureInPicture' in window);",
-      "const IS_PIP=true;"
-    );
-    pip.document.open();pip.document.write(pipHtml);pip.document.close();
-
-    // PiP 닫힐 때 팝업 복원
-    pip.addEventListener('pagehide',()=>{
-      _pipWin=null;
-      document.documentElement.style.visibility='';
-      window.resizeTo(savedW,savedH);
-      window.moveTo(savedX,savedY);
-      window.focus();
-    });
-  }catch(err){
-    document.documentElement.style.visibility='';
-    window.resizeTo(savedW,savedH);
-    window.moveTo(savedX,savedY);
-    console.error('PiP 오류:',err);
-  }
-});
+document.getElementById('close-btn').addEventListener('click',()=>window.close());
 </script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // 화면 좌상단에 표시되는 앱 버전 — 업데이트 확인용. 기능을 변경/배포할 때 함께 올려주세요.
-const APP_VERSION="2.1.3";
+const APP_VERSION="2.2.0";
 
 // ── localStorage 저장/로드 ──
 const LS_KEY = "myTimerData";
@@ -301,6 +301,7 @@ export default function App() {
   const paRef=useRef(null);
   const bcRef=useRef(null);
   const miniWinRef=useRef(null);
+  const pipWinRef=useRef(null);
   const bgmFocusInputRef=useRef(null);
   const bgmBreakInputRef=useRef(null);
   const alarmRef=useRef(alarmCfg);
@@ -499,6 +500,25 @@ export default function App() {
     bcRef.current?.postMessage(state);
     try{localStorage.setItem('pomodoro-mini-state',JSON.stringify(state));}catch(e){}
   },[tLeft,running,session?.phase,session?.tid,session?.done,tColor]);
+
+  async function openMiniPiP(){
+    if(pipWinRef.current&&!pipWinRef.current.closed)return;
+    if(!('documentPictureInPicture' in window)){openMiniWindow();return;}
+    const sw=window.screen.availWidth,sh=window.screen.availHeight;
+    const gap=16,W=300,H=200;
+    try{
+      const pip=await documentPictureInPicture.requestWindow({width:W,height:H,disallowReturnToOpener:false});
+      pipWinRef.current=pip;
+      try{pip.moveTo(sw-W-gap,sh-H-gap);}catch(_){}
+      const res=await fetch('/mini.html');
+      const html=await res.text();
+      pip.document.open();pip.document.write(html);pip.document.close();
+      pip.addEventListener('pagehide',()=>{pipWinRef.current=null;});
+    }catch(err){
+      console.error('PiP 오류:',err);
+      openMiniWindow();
+    }
+  }
 
   function openMiniWindow(){
     if(miniWinRef.current&&!miniWinRef.current.closed){miniWinRef.current.focus();return;}
@@ -1243,7 +1263,7 @@ export default function App() {
                       <button onClick={toggleRun} style={{padding:"9px 24px",fontSize:14,background:tColor,color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:500}}>{running?"일시정지":"시작"}</button>
                       <button onClick={resetTmr} style={{padding:"9px 14px",fontSize:13,background:"transparent",color:"#666",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>리셋</button>
                       <button onClick={stopSes} style={{padding:"9px 14px",fontSize:13,background:"transparent",color:"#E24B4A",border:"1px solid #E24B4A50",borderRadius:8,cursor:"pointer"}}>종료</button>
-                      <button onClick={openMiniWindow} title="미니 팝업창 열기" style={{padding:"9px 10px",fontSize:13,background:"transparent",color:"#888",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>⛶</button>
+                      <button onClick={openMiniPiP} title="미니 창 열기" style={{padding:"9px 10px",fontSize:13,background:"transparent",color:"#888",border:"1px solid #d8d5cf",borderRadius:8,cursor:"pointer"}}>⛶</button>
                     </div>
                     <div style={{display:"flex",gap:4,marginTop:12,flexWrap:"wrap",justifyContent:"center",maxWidth:192}}>
                       {Array.from({length:session.total}).map((_,i)=>(
