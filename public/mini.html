@@ -83,26 +83,67 @@ let _lastState=null;
 try{const s=localStorage.getItem('pomodoro-mini-state');if(s){_lastState=JSON.parse(s);render(_lastState);}}catch(e){}
 bc.onmessage=e=>{if(e.data&&!e.data.type){_lastState=e.data;render(e.data);}};
 
-// PiP 창 내부에서는 documentPictureInPicture API가 없으므로 모드 구분
+// PiP 창 내부에서는 documentPictureInPicture API가 없음 → 모드 구분
 const IS_PIP=!('documentPictureInPicture' in window);
 const pipBtn=document.getElementById('pip-btn');
+let _pipWin=null;
 
 if(IS_PIP){
   pipBtn.classList.add('active');
   pipBtn.title='팝업으로 전환';
 }
 
-pipBtn.addEventListener('click',()=>{
-  if(!IS_PIP&&!('documentPictureInPicture' in window)){
+pipBtn.addEventListener('click',async()=>{
+  if(IS_PIP){
+    // PiP → 닫기만 하면 됨: pagehide에서 팝업이 자동 복원
+    window.close();
+    return;
+  }
+
+  // 팝업 → PiP (팝업이 직접 열기 — user gesture가 여기 있으므로 안정적)
+  if(!('documentPictureInPicture' in window)){
     alert('항상 위에 기능은 Chrome 116 이상에서 지원됩니다.\n\n대신 Windows 키보드 단축키:\n• PowerToys "Always on Top": Win+Ctrl+T');
     return;
   }
-  const type=IS_PIP?'popup-request':'pip-request';
+  if(_pipWin&&!_pipWin.closed){_pipWin.close();return;}
+
+  const savedX=window.screenX,savedY=window.screenY;
+  const savedW=window.outerWidth,savedH=window.outerHeight;
+  const titleBarH=Math.max(0,window.outerHeight-window.innerHeight);
+
   try{
-    window.opener?.focus(); // 최소화된 경우 복원 (requestWindow는 창이 visible해야 작동)
-    window.opener?.postMessage({type},{targetOrigin:location.origin,includeUserActivation:true});
-  }catch(e){}
-  window.close();
+    const pip=await documentPictureInPicture.requestWindow({width:300,height:200,disallowReturnToOpener:false});
+    _pipWin=pip;
+    try{pip.moveTo(savedX,savedY+titleBarH);}catch(e){}
+
+    // 팝업 숨기기 (닫지 않음: PiP의 opener 유지)
+    document.documentElement.style.visibility='hidden';
+    window.resizeTo(1,1);
+    window.moveTo(window.screen.availWidth-2,window.screen.availHeight-2);
+
+    // PiP에 mini.html 주입 (IS_PIP=true 강제)
+    const res=await fetch('/mini.html');
+    const html=await res.text();
+    const pipHtml=html.replace(
+      "const IS_PIP=!('documentPictureInPicture' in window);",
+      "const IS_PIP=true;"
+    );
+    pip.document.open();pip.document.write(pipHtml);pip.document.close();
+
+    // PiP 닫힐 때 팝업 복원
+    pip.addEventListener('pagehide',()=>{
+      _pipWin=null;
+      document.documentElement.style.visibility='';
+      window.resizeTo(savedW,savedH);
+      window.moveTo(savedX,savedY);
+      window.focus();
+    });
+  }catch(err){
+    document.documentElement.style.visibility='';
+    window.resizeTo(savedW,savedH);
+    window.moveTo(savedX,savedY);
+    console.error('PiP 오류:',err);
+  }
 });
 </script>
 </body>
